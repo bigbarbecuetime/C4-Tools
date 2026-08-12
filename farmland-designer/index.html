@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Farmland Designer</title>
+<link rel="stylesheet" href="../shared/common.css?v=2">
+</head>
+<body>
+<header>
+  <h1>Farmland Designer</h1>
+  <nav class="suite">
+    <a href="../index.html">⌂</a>
+    <a href="../crop-designer/index.html">crops</a>
+    <a href="#" class="here">farmland</a>
+    <a href="../consumable-designer/index.html">consumables</a>
+    <a href="../head-painter/index.html">heads</a>
+    <a href="../config-editor/index.html">config</a>
+  </nav>
+  <div class="header-actions">
+    <button id="btn-upload" class="ghost" title="Load an existing FarmlandTypes.yml">upload</button>
+    <button id="btn-clear" class="ghost" title="Clear all farmland types">clear</button>
+    <input id="file-input" type="file" accept=".yml,.yaml,text/yaml" hidden>
+  </div>
+</header>
+
+<main class="two-col">
+  <section class="panel" id="left-panel">
+    <div class="tab-bar" id="type-tabs"></div>
+    <button id="btn-add-type" class="add">+ farmland type</button>
+
+    <h2>Identity</h2>
+    <div class="form-grid">
+      <label>Id <input id="fl-id" type="text" spellcheck="false"></label>
+      <label>Display name <input id="fl-name" type="text"></label>
+      <p class="hint">Use &amp; codes for color and formatting. For example, &amp;6 makes text gold and &amp;l makes it bold. See
+        <a href="https://minecraft.wiki/w/Formatting_codes" target="_blank" rel="noopener">Formatting codes</a>
+        (Java Edition set only: 0-9a-f, k/l/m/n/o/r).</p>
+    </div>
+
+    <h2>Tilling</h2>
+    <div class="form-grid">
+      <label>Source blocks (comma separated)
+        <input id="fl-sources" type="text" spellcheck="false" placeholder="SAND, RED_SAND" data-keys="blocks" data-multi></label>
+      <label>Till tools (comma separated, empty = all hoes)
+        <input id="fl-tools" type="text" spellcheck="false" placeholder="IRON_HOE, DIAMOND_HOE" data-keys="hoes" data-multi></label>
+      <label>Wrong-tool message (optional, shown before the auto tool list)
+        <input id="fl-wrongtool" type="text" spellcheck="false" placeholder="The frost is too tough!"></label>
+      <label class="check"><input id="fl-notill" type="checkbox"> Plant directly (no tilling, e.g. SOUL_SOIL)</label>
+      <div class="with-chip">
+        <label>Tilled block (optionally comma separated) <input id="fl-visual" type="text" spellcheck="false" placeholder="STONE" data-keys="blocks" data-multi></label>
+        <canvas class="tex-chip" id="fl-chip" width="16" height="16"></canvas>
+      </div>
+      <p class="hint">Source blocks are the original blocks to be tilled.
+      The tilled block is used for the texture of the tilled farmland.
+      Multiple source and tilled blocks can be considered the same farmland, in this case list them in order for each.
+      (e.g. <code>SAND, RED_SAND</code> keeps each sand its own color). The preview only
+      shows the first of this list.
+      For a full list of blocks see <a href="https://hub.spigotmc.org/javadocs/bukkit/org/bukkit/Material.html">here</a>
+      </p>
+    </div>
+
+    <h2>Water model</h2>
+    <div class="form-grid">
+      <label>Hydration source block <input id="fl-source" type="text" spellcheck="false" placeholder="WATER" data-keys="hydration"></label>
+      <label>Hydration radius (1-8) <input id="fl-radius" type="number" min="1" max="8"></label>
+      <label>Default biome baseline (0-1) <input id="fl-baseline" type="number" min="0" max="1" step="0.05"></label>
+      <label>Dry rate per minute <input id="fl-dryrate" type="number" min="0" step="0.01"></label>
+      <p class="hint">The block that hydrates this farmland. <code>WATER</code> by default;
+      use <code>LAVA</code> for nether soils (crimson/warped/soul).</p>
+    </div>
+
+    <h2>Per-biome baselines</h2>
+    <p class="hint">Initial/ambient water content by biome key. When this farmland is
+    in these biomes it will start (and dry back to) these values.</p>
+    <div id="biome-list"></div>
+    <button id="btn-add-biome" class="add">+ biome baseline</button>
+  </section>
+
+  <section class="preview-side">
+    <canvas id="preview" width="760" height="560"></canvas>
+    <div class="grow-bar" style="width:100%;max-width:700px">
+      <span class="hint" style="white-space:nowrap">water content</span>
+      <input id="water-slider" type="range" min="0" max="100" value="60">
+      <span id="water-label" style="font-family:Consolas,monospace;color:var(--muted)">60%</span>
+    </div>
+    <span class="hint">drag to orbit · scroll to zoom · the blue ring shows the hydration radius</span>
+  </section>
+</main>
+
+<section id="output">
+  <div class="out-col" style="grid-column:1/-1">
+    <h2>Config files</h2>
+    <div id="file-dock"></div>
+  </div>
+</section>
+
+<script src="../shared/mc-assets.js?v=5"></script>
+<script src="../shared/yaml-lite.js?v=3"></script>
+<script src="../shared/mc-keys.js?v=5"></script>
+<script src="../shared/key-picker.js?v=2"></script>
+<script src="../shared/file-dock.js?v=1"></script>
+<script src="../shared/file-store.js?v=1"></script>
+<script src="../shared/legacy-text.js?v=1"></script>
+<script src="app.js?v=8"></script>
+</body>
+</html>

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Head Painter</title>
+<link rel="stylesheet" href="../shared/common.css?v=2">
+<link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+<header>
+  <h1>Head Painter</h1>
+  <nav class="suite">
+    <a href="../index.html">⌂</a>
+    <a href="../crop-designer/index.html">crops</a>
+    <a href="../farmland-designer/index.html">farmland</a>
+    <a href="../consumable-designer/index.html">consumables</a>
+    <a href="#" class="here">heads</a>
+    <a href="../config-editor/index.html">config</a>
+  </nav>
+  <div class="header-actions">
+    <button id="btn-undo" class="ghost" title="Undo (Ctrl+Z)">undo</button>
+    <button id="btn-redo" class="ghost" title="Redo (Ctrl+Shift+Z)">redo</button>
+    <button id="btn-reset" class="ghost" title="Discard the drawing and start from a plain gray head">reset</button>
+  </div>
+</header>
+
+<main>
+  <!-- ── left: brush, color, layer ───────────────────────────────────── -->
+  <section class="panel" id="left-panel">
+    <h2>Tool</h2>
+    <div class="tool-grid" id="tool-grid">
+      <button data-tool="pencil" class="active" title="Paint one pixel (drag to draw)">✎ pencil</button>
+      <button data-tool="eraser" title="Clear pixels to transparent">◻ eraser</button>
+      <button data-tool="fill" title="Flood fill the matching region, bounded to one face">▩ fill</button>
+      <button data-tool="picker" title="Pick the color under the cursor (Alt held = temporary picker)">⌖ pick</button>
+    </div>
+    <p class="hint">Hold <code>Alt</code> with any tool to pick a color, and
+    <code>Ctrl</code> to erase. Right-click erases too.</p>
+
+    <h2>Color</h2>
+    <div class="color-row">
+      <input id="color-swatch" type="color" value="#8b8b8b">
+      <input id="color-hex" type="text" spellcheck="false" value="#8B8B8B">
+    </div>
+    <label class="slider">Alpha <input id="alpha-slider" type="range" min="0" max="255" value="255">
+      <span id="alpha-label" class="mono">255</span></label>
+    <p class="hint" id="alpha-hint" style="display:none;color:var(--warn)">
+      Partly transparent. Fine on the overlay; the base layer should stay opaque.</p>
+    <h3 class="sub">Recent</h3>
+    <div class="palette" id="palette"></div>
+
+    <h2>Layer</h2>
+    <div class="tool-grid two" id="layer-grid">
+      <button data-layer="base" class="active" title="The head itself">base</button>
+      <button data-layer="hat" title="The 1.125x outer shell drawn over the head">overlay</button>
+    </div>
+    <label class="check"><input id="opt-hat-visible" type="checkbox" checked> Show overlay in the 3D preview</label>
+    <label class="check"><input id="opt-mirror" type="checkbox"> Mirror X (paint both halves of a face)</label>
+    <label class="check"><input id="opt-grid" type="checkbox" checked> Pixel grid</label>
+    <label class="slider">Zoom <input id="zoom-slider" type="range" min="6" max="28" value="16">
+      <span id="zoom-label" class="mono">16x</span></label>
+
+    <h2>Base layer</h2>
+    <p class="hint" id="opacity-note">All base pixels are opaque.</p>
+  </section>
+
+  <!-- ── center: the net and the 3D head ─────────────────────────────── -->
+  <section id="center-panel">
+    <div class="net-wrap">
+      <canvas id="net" width="512" height="384"></canvas>
+    </div>
+    <span class="hint" id="net-readout">&nbsp;</span>
+
+    <div class="preview-wrap">
+      <canvas id="preview" width="360" height="300"></canvas>
+    </div>
+    <div class="grow-bar" style="max-width:360px;width:100%">
+      <button id="btn-spin" title="Spin the preview">▶ spin</button>
+      <span class="hint" style="white-space:nowrap">drag to orbit · scroll to zoom</span>
+    </div>
+  </section>
+
+  <!-- ── right: the base64 value in and out ──────────────────────────── -->
+  <section class="panel" id="right-panel">
+    <h2>Start from a value</h2>
+    <p class="hint">Paste a head's base64 <code>texture</code> value, a
+    <code>textures.minecraft.net</code> skin URL, or a bare texture hash, then load it
+    onto the canvas to edit.</p>
+    <textarea id="in-value" rows="5" spellcheck="false"
+      placeholder="eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvLi4uIn19fQ=="></textarea>
+    <div class="btn-row">
+      <button id="btn-load">load onto canvas</button>
+    </div>
+
+    <h2>Skin file</h2>
+    <p class="hint">Upload a skin PNG to paint over it. Download saves the skin.</p>
+    <div class="btn-row">
+      <button id="btn-upload">upload PNG</button>
+      <button id="btn-download">download PNG</button>
+    </div>
+    <input id="file-input" type="file" accept="image/png,image/*" hidden>
+
+    <h2>Generate a value</h2>
+    <p class="hint">A texture value links to a skin hosted by Mojang. It does not contain the pixels. The painted skin is uploaded to
+    <a href="https://mineskin.org" target="_blank" rel="noopener">MineSkin</a>, which
+    puts it on Mojang's texture server and hands back the value.</p>
+    <div class="form-grid">
+      <label>Skin name (max 20) <input id="ms-name" type="text" maxlength="20" placeholder="c4 head"></label>
+      <label>Visibility
+        <select id="ms-visibility">
+          <option value="public">public, listed on mineskin.org</option>
+          <option value="unlisted" selected>unlisted, only available by link</option>
+          <option value="private">private, API key required</option>
+        </select></label>
+      <label>MineSkin API key (optional)
+        <input id="ms-key" type="text" spellcheck="false" placeholder="left blank = free tier"></label>
+      <p class="hint">Kept in this browser only (<code>localStorage</code>), never sent
+      anywhere but MineSkin. Without a key you share the free tier's limit of about 20
+      skins per minute. Keys come from
+      <a href="https://account.mineskin.org/keys" target="_blank" rel="noopener">account.mineskin.org</a>.</p>
+    </div>
+    <div class="btn-row">
+      <button id="btn-generate" class="primary">generate value</button>
+    </div>
+    <p class="hint" id="status" role="status">&nbsp;</p>
+
+    <h2>Result</h2>
+    <label>Texture value (paste into <code>texture:</code>)</label>
+    <textarea id="out-value" rows="5" spellcheck="false" readonly placeholder="generate a value to fill this"></textarea>
+    <div class="btn-row">
+      <button id="btn-copy-value" class="copy">copy value</button>
+      <button id="btn-to-input" class="ghost" title="Move it up to the load field to keep editing">edit this</button>
+    </div>
+    <label style="margin-top:10px">Skin URL (works as <code>texture:</code> too)</label>
+    <input id="out-url" type="text" spellcheck="false" readonly placeholder="http://textures.minecraft.net/texture/...">
+    <div class="btn-row">
+      <button id="btn-copy-url" class="copy">copy URL</button>
+    </div>
+    <label style="margin-top:10px">Signature <span class="muted">(C4 does not need this)</span></label>
+    <textarea id="out-sig" rows="2" spellcheck="false" readonly placeholder="-"></textarea>
+
+    <h2>Using it</h2>
+    <p class="hint">Drop the value into any C4 <code>texture</code> field: a station or
+    tool in <code>config.yml</code>, a head consumable, or a
+    <code>type: head</code> crop stage element in the
+    <a href="../crop-designer/index.html" style="color:var(--accent2)">crop designer</a>.
+    Heads with the same value stack.</p>
+  </section>
+</main>
+
+<script src="app.js?v=6"></script>
+</body>
+</html>

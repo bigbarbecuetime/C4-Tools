@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Consumable Designer</title>
+<link rel="stylesheet" href="../shared/common.css?v=2">
+</head>
+<body>
+<header>
+  <h1>Consumable Designer</h1>
+  <nav class="suite">
+    <a href="../index.html">⌂</a>
+    <a href="../crop-designer/index.html">crops</a>
+    <a href="../farmland-designer/index.html">farmland</a>
+    <a href="#" class="here">consumables</a>
+    <a href="../head-painter/index.html">heads</a>
+    <a href="../config-editor/index.html">config</a>
+  </nav>
+  <div class="header-actions">
+    <button id="btn-upload" class="ghost" title="Load an existing consumables .yml">upload</button>
+    <button id="btn-clear" class="ghost" title="Clear all consumables">clear</button>
+    <input id="file-input" type="file" accept=".yml,.yaml,text/yaml" hidden>
+  </div>
+</header>
+
+<main class="two-col">
+  <section class="panel" id="left-panel">
+    <div class="tab-bar" id="item-tabs"></div>
+    <button id="btn-add-item" class="add">+ consumable</button>
+    <div id="form-root"></div>
+  </section>
+
+  <section class="preview-side">
+    <div id="tooltip-preview"></div>
+    <span class="hint">live item preview</span>
+  </section>
+</main>
+
+<section id="output">
+  <div class="out-col" style="grid-column:1/-1">
+    <h2>Config files</h2>
+    <div id="file-dock"></div>
+  </div>
+</section>
+
+<style>
+  /* item tooltip mock */
+  #tooltip-preview {
+    margin-top: 40px;
+    background: rgba(16, 0, 16, 0.94);
+    border: 2px solid #25015a;
+    outline: 1px solid #100010;
+    border-radius: 4px;
+    padding: 14px 18px;
+    min-width: 260px;
+    max-width: 360px;
+    font-family: Consolas, monospace;
+  }
+  #tooltip-preview img, #tooltip-preview canvas.big-tex {
+    width: 96px; height: 96px;
+    image-rendering: pixelated;
+    display: block;
+    margin: 0 auto 12px;
+  }
+  #tooltip-preview .t-name { color: #55ff55; font-size: 15px; margin-bottom: 6px; }
+  #tooltip-preview .t-desc { color: #aaaaaa; font-style: italic; font-size: 12.5px; }
+  #tooltip-preview .t-line { color: #5555ff; font-size: 12px; margin-top: 4px; }
+  #tooltip-preview .t-warn { color: #ff5555; font-size: 12px; margin-top: 4px; }
+  #tooltip-preview .t-gold { color: #ffaa00; font-size: 12px; margin-top: 4px; }
+</style>
+
+<!-- Vanilla-key suggestions (free text still allowed); populated by mc-keys.js -->
+<datalist id="dl-effects"></datalist>
+
+<script src="../shared/mc-assets.js?v=5"></script>
+<script src="../shared/yaml-lite.js?v=3"></script>
+<script src="../shared/events-editor.js?v=2"></script>
+<script src="../shared/mc-keys.js?v=5"></script>
+<script src="../shared/key-picker.js?v=2"></script>
+<script src="../shared/file-dock.js?v=1"></script>
+<script src="../shared/file-store.js?v=1"></script>
+<script src="../shared/legacy-text.js?v=1"></script>
+<script src="app.js?v=13"></script>
+</body>
+</html>

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>C4 Config Tools</title>
+<link rel="stylesheet" href="shared/common.css">
+<style>
+  .hero {
+    text-align: center;
+    padding: 56px 20px 40px;
+    border-bottom: 1px solid var(--border);
+    background:
+      radial-gradient(ellipse 70% 100% at 50% 0%, rgba(111, 191, 79, 0.10), transparent 70%),
+      var(--bg);
+    margin-bottom: 28px;
+  }
+  .hero .logo {
+    font-size: 64px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    margin: 0;
+    color: var(--accent);
+    line-height: 1;
+  }
+  .hero .logo .four { color: var(--accent2); }
+  .hero .tagline {
+    margin: 14px 0 0;
+    font-size: 20px;
+    color: var(--text);
+    font-weight: 600;
+  }
+  .hero .tagline .c { color: var(--accent); }
+  .hero .sub {
+    margin: 10px auto 0;
+    max-width: 560px;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+<div class="hero">
+  <h1 class="logo">C<span class="four">4</span></h1>
+  <p class="tagline" aria-label="Crops, Consumables, Cooking, Crafting">
+    <span aria-hidden="true"><span class="c">C</span>rops &middot;
+    <span class="c">C</span>onsumables &middot;
+    <span class="c">C</span>ooking &middot;
+    <span class="c">C</span>rafting</span>
+  </p>
+</div>
+<div class="landing">
+  <h1 style="color:var(--accent)">Config Tools</h1>
+  <p class="hint">Tools for building the plugin's YAML config files.
+      Each tool generates files you drop into
+  <code>plugins/C4/&lt;folder&gt;/</code>.</p>
+
+  <div class="tools-grid">
+    <a class="tool-card" href="crop-designer/index.html">
+      <h3>Crop Designer</h3>
+      <p>Build crop stages with items, blocks, and player heads. Export crop files for <code>farming/</code>.</p>
+    </a>
+    <a class="tool-card" href="farmland-designer/index.html">
+      <h3>Farmland Designer</h3>
+      <p>Create farmland and choose how it gets water. Export files for <code>farming/farmland/</code>.</p>
+    </a>
+    <a class="tool-card" href="consumable-designer/index.html">
+      <h3>Consumable Designer</h3>
+      <p>Create food, effects, recipes, preparation steps, and addictions. Export files for <code>consumables/</code>.</p>
+    </a>
+    <a class="tool-card" href="head-painter/index.html">
+      <h3>Head Painter</h3>
+      <p>Paint a player head or edit an existing texture. Copy the finished texture value.</p>
+    </a>
+    <a class="tool-card" href="config-editor/index.html">
+      <h3>Config Editor</h3>
+      <p>Edit the main settings, groups, visuals, and vanilla crops. Export <code>config.yml</code>.</p>
+    </a>
+  </div>
+</div>
+</body>
+</html>

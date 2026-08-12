@@ -1,0 +1,97 @@
+/* Head Painter - only what common.css has no vocabulary for. */
+
+/* Segmented tool / layer buttons (same look as the crop designer's gizmo bar). */
+.tool-grid { display: flex; flex-wrap: wrap; gap: 4px; }
+.tool-grid button { flex: 1 1 46%; padding: 5px 6px; }
+.tool-grid.two button { flex: 1 1 0; }
+.tool-grid button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
+
+.color-row { display: flex; gap: 6px; align-items: center; }
+.color-row input[type="color"] {
+  width: 42px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel2);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.color-row input[type="text"] { text-transform: uppercase; }
+
+input[type="range"] { accent-color: var(--accent); width: 100%; }
+.mono { font-family: Consolas, monospace; color: var(--muted); }
+
+/* common.css stacks every label; sliders read better on one line. */
+label.slider { flex-direction: row; align-items: center; gap: 8px; }
+label.slider input[type="range"] { flex: 1; }
+label.slider .mono { min-width: 34px; text-align: right; }
+
+.palette { display: flex; flex-wrap: wrap; gap: 4px; min-height: 20px; }
+.palette button {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 3px;
+  /* Checkerboard shows through partly transparent swatches. */
+  background-image:
+    linear-gradient(45deg, #2a3038 25%, transparent 25%, transparent 75%, #2a3038 75%),
+    linear-gradient(45deg, #2a3038 25%, transparent 25%, transparent 75%, #2a3038 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 4px 4px;
+}
+.palette button span { display: block; width: 100%; height: 100%; border-radius: 2px; }
+.palette:empty::after { content: "colors you use land here"; color: var(--muted); font-size: 11px; font-style: italic; }
+
+/* centre column: the net above the 3D head */
+#center-panel { gap: 6px; justify-content: flex-start; padding: 14px 8px; }
+.net-wrap, .preview-wrap { max-width: 100%; }
+#net {
+  max-width: 100%;
+  image-rendering: pixelated;
+  cursor: crosshair;
+  touch-action: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+}
+#preview { max-width: 100%; cursor: grab; touch-action: none; }
+#preview:active { cursor: grabbing; }
+#net-readout { font-family: Consolas, monospace; min-height: 1.2em; }
+
+/* right column: value in / out */
+textarea {
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 6px 7px;
+  font-family: Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  width: 100%;
+  resize: vertical;
+  word-break: break-all;
+}
+textarea:focus { outline: 1px solid var(--accent); }
+textarea[readonly] { color: var(--muted); }
+input[readonly] { color: var(--muted); }
+
+.btn-row { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.btn-row button { flex: 1; }
+button.primary { border-color: var(--accent); color: var(--accent); }
+button:disabled { opacity: 0.5; cursor: default; }
+button:disabled:hover { border-color: var(--border); color: var(--text); }
+
+/* status line states */
+#status.working { color: var(--accent2); }
+#status.ok { color: var(--accent); }
+#status.bad { color: var(--danger); }
+
+@media (max-width: 1100px) {
+  #center-panel { padding: 10px 4px; }
+}
