@@ -1,9 +1,8 @@
 /* Shared autocomplete dropdown with texture previews for Minecraft key inputs.
  *
- * Replaces the native <datalist> on block/item key fields so each suggestion
- * shows a small texture thumbnail (via MCAssets) before it is selected, and so
- * each field only offers keys of the right kind (blocks for block fields,
- * items for item fields - wrong-kind keys fail to parse in the plugin).
+ * Replaces browser-native suggestion menus with one project control. Textured
+ * Minecraft keys show their asset; non-texture keys keep the same dropdown
+ * layout with a small semantic pixel icon.
  *
  * Usage: give any <input> a data-keys attribute naming a list below, e.g.
  *   <input data-keys="blocks">          - single key
@@ -28,6 +27,34 @@ const KeyPicker = (() => {
     "fertilizers": { keys: () => MCKeys.FERTILIZERS,  icon: "item"  },
     "hoes":        { keys: () => MCKeys.HOES,         icon: "item"  },
     "hydration":   { keys: () => MCKeys.HYDRATION,    icon: "block" },
+    "biomes":      { keys: () => MCKeys.BIOMES,       icon: "biome" },
+    "effects":     { keys: () => MCKeys.EFFECTS,      icon: "effect" },
+    "sounds": {
+      keys: () => globalThis.EventsEditor?.SOUNDS || [],
+      icon: "sound",
+    },
+    "particles": {
+      keys: () => globalThis.EventsEditor?.PARTICLES || [],
+      icon: "particle",
+    },
+    // Tool-local catalogs are populated from uploaded project files. Keeping
+    // them behind providers gives custom ids the same project picker as
+    // vanilla ids without coupling this shared control to one designer.
+    "farmlands": {
+      keys: () => globalThis.CropDesignerCatalog?.farmlandKeys?.() || ["minecraft"],
+      texture: key => globalThis.CropDesignerCatalog?.farmlandTexture?.(key),
+      icon: "block",
+    },
+    "consumables": {
+      keys: () => globalThis.CropDesignerCatalog?.consumableKeys?.() || [],
+      texture: key => globalThis.CropDesignerCatalog?.consumableTexture?.(key),
+      icon: "item",
+    },
+    "group-members": {
+      keys: () => globalThis.ConfigEditorCatalog?.groupMemberKeys?.() || MCKeys.ITEMS,
+      texture: key => globalThis.ConfigEditorCatalog?.groupMemberTexture?.(key),
+      icon: "item",
+    },
   };
 
   let drop = null;      // the singleton dropdown element
@@ -84,9 +111,36 @@ const KeyPicker = (() => {
   }
 
   function texFor(listDef, key) {
-    return listDef.icon === "block"
-      ? MCAssets.blockSprite(key)
-      : MCAssets.item(key.replace(/^minecraft:/, ""));
+    if (listDef.texture) return listDef.texture(key);
+    if (listDef.icon === "block") return MCAssets.blockSprite(key);
+    if (listDef.icon === "item") return MCAssets.item(key.replace(/^minecraft:/, ""));
+    if (listDef.icon === "biome") return MCAssets.blockSprite("GRASS_BLOCK");
+    return null;
+  }
+
+  function paintSemanticIcon(g, kind, key) {
+    g.clearRect(0, 0, 16, 16);
+    if (kind === "sound") {
+      g.fillStyle = "#7b5725";
+      g.fillRect(2, 6, 4, 5); g.fillRect(6, 4, 3, 9);
+      g.fillStyle = "#e3aa38";
+      g.fillRect(10, 5, 2, 2); g.fillRect(12, 3, 2, 3);
+      g.fillRect(10, 10, 2, 2); g.fillRect(12, 11, 2, 2);
+      return;
+    }
+    if (kind === "particle") {
+      const color = MCAssets.colorFor(key);
+      g.fillStyle = color;
+      g.fillRect(6, 2, 4, 4); g.fillRect(2, 8, 3, 3);
+      g.fillRect(10, 9, 4, 4); g.fillRect(6, 12, 2, 2);
+      return;
+    }
+    if (kind === "effect") {
+      g.fillStyle = "#7250a8";
+      g.fillRect(6, 2, 4, 3); g.fillRect(4, 6, 8, 7);
+      g.fillStyle = "#c9a9f2";
+      g.fillRect(6, 7, 4, 4);
+    }
   }
 
   function paintRow(r) {
@@ -97,6 +151,9 @@ const KeyPicker = (() => {
     g.imageSmoothingEnabled = false;
     g.clearRect(0, 0, 16, 16);
     if (tex) { g.drawImage(tex, 0, 0, 16, 16); r.painted = true; }
+    else if (["sound", "particle", "effect"].includes(listDef.icon)) {
+      paintSemanticIcon(g, listDef.icon, r.key); r.painted = true;
+    }
     else { g.fillStyle = MCAssets.colorFor(r.key); g.fillRect(2, 2, 12, 12); }
   }
 

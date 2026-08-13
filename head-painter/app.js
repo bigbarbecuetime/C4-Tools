@@ -517,12 +517,17 @@
     cancelAnimationFrame(spinTimer);
     spinTimer = null;
     state.spinning = false;
-    $("btn-spin").textContent = "▶ spin";
+    $("btn-spin").innerHTML = UI.icon("play", "sm");
+    $("btn-spin").classList.remove("go");
+    $("btn-spin").title = "Spin the preview";
   }
+  $("btn-spin").innerHTML = UI.icon("play", "sm");
   $("btn-spin").addEventListener("click", () => {
     if (state.spinning) { stopSpin(); return; }
     state.spinning = true;
-    $("btn-spin").textContent = "❚❚ stop";
+    $("btn-spin").innerHTML = UI.icon("stop", "sm");
+    $("btn-spin").classList.add("go");
+    $("btn-spin").title = "Stop";
     const step = () => {
       state.yaw += 0.012;
       drawPreview();
@@ -752,6 +757,7 @@
       $("out-value").value = "";
       $("out-sig").value = "";
       $("out-url").value = "";
+      $("generate-result").hidden = true;
       status("uploading to MineSkin...", "working");
       const form = new FormData();
       form.append("file", await skinBlob(), "head.png");
@@ -811,8 +817,11 @@
     $("out-value").value = data.value || "";
     $("out-sig").value = data.signature || "";
     $("out-url").value = (tex.url && tex.url.skin) || "";
-    const dup = skinInfo.duplicate ? " (matched a skin MineSkin already had)" : "";
-    status(data.value ? `Value ready${dup}` : "MineSkin returned no texture value.", data.value ? "ok" : "bad");
+    const ready = !!data.value;
+    $("generate-result").hidden = !ready;
+    status(ready
+      ? (skinInfo.duplicate ? "MineSkin reused an identical uploaded skin." : " ")
+      : "MineSkin returned no texture value.", ready ? "" : "bad");
   }
 
   function status(text, kind) {

@@ -1,39 +1,42 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Head Painter</title>
-<link rel="stylesheet" href="../shared/common.css?v=2">
-<link rel="stylesheet" href="style.css?v=1">
+<link rel="icon" type="image/png" href="../shared/c4-mark.png?v=4">
+<link rel="stylesheet" href="../shared/common.css?v=30">
+<link rel="stylesheet" href="style.css?v=4">
 </head>
-<body>
-<header>
-  <h1>Head Painter</h1>
-  <nav class="suite">
-    <a href="../index.html">⌂</a>
+<body data-screen="outline">
+<div class="app">
+
+  <header class="appbar">
+    <a class="mark" href="../index.html" title="C4 home" data-logo></a>
+    <h1>Head Painter</h1>
+    <nav class="suite">
     <a href="../crop-designer/index.html">crops</a>
     <a href="../farmland-designer/index.html">farmland</a>
     <a href="../consumable-designer/index.html">consumables</a>
-    <a href="#" class="here">heads</a>
+    <a href="../head-painter/index.html" class="here">heads</a>
     <a href="../config-editor/index.html">config</a>
-  </nav>
-  <div class="header-actions">
-    <button id="btn-undo" class="ghost" title="Undo (Ctrl+Z)">undo</button>
-    <button id="btn-redo" class="ghost" title="Redo (Ctrl+Shift+Z)">redo</button>
-    <button id="btn-reset" class="ghost" title="Discard the drawing and start from a plain gray head">reset</button>
-  </div>
-</header>
+    </nav>
+    <div class="header-actions">
+      <button id="btn-undo" class="tbtn" title="Undo (Ctrl+Z)">undo</button>
+      <button id="btn-redo" class="tbtn" title="Redo (Ctrl+Shift+Z)">redo</button>
+      <button id="btn-reset" class="tbtn" title="Discard the drawing and start from a plain gray head">reset</button>
+      <button class="tbtn" data-theme-toggle title="Light / dark"></button>
+    </div>
+  </header>
 
-<main>
-  <!-- ── left: brush, color, layer ───────────────────────────────────── -->
-  <section class="panel" id="left-panel">
+  <section class="outline">
+    <div class="tree">
     <h2>Tool</h2>
     <div class="tool-grid" id="tool-grid">
-      <button data-tool="pencil" class="active" title="Paint one pixel (drag to draw)">✎ pencil</button>
-      <button data-tool="eraser" title="Clear pixels to transparent">◻ eraser</button>
-      <button data-tool="fill" title="Flood fill the matching region, bounded to one face">▩ fill</button>
-      <button data-tool="picker" title="Pick the color under the cursor (Alt held = temporary picker)">⌖ pick</button>
+      <button data-tool="pencil" class="active" title="Paint one pixel (drag to draw)">Pencil</button>
+      <button data-tool="eraser" title="Clear pixels to transparent">Eraser</button>
+      <button data-tool="fill" title="Flood fill the matching region, bounded to one face">Fill</button>
+      <button data-tool="picker" title="Pick the color under the cursor (Alt held = temporary picker)">Pick color</button>
     </div>
     <p class="hint">Hold <code>Alt</code> with any tool to pick a color, and
     <code>Ctrl</code> to erase. Right-click erases too.</p>
@@ -45,7 +48,7 @@
     </div>
     <label class="slider">Alpha <input id="alpha-slider" type="range" min="0" max="255" value="255">
       <span id="alpha-label" class="mono">255</span></label>
-    <p class="hint" id="alpha-hint" style="display:none;color:var(--warn)">
+    <p class="hint alpha-warning" id="alpha-hint">
       Partly transparent. Fine on the overlay; the base layer should stay opaque.</p>
     <h3 class="sub">Recent</h3>
     <div class="palette" id="palette"></div>
@@ -63,10 +66,12 @@
 
     <h2>Base layer</h2>
     <p class="hint" id="opacity-note">All base pixels are opaque.</p>
+    </div>
   </section>
 
-  <!-- ── center: the net and the 3D head ─────────────────────────────── -->
-  <section id="center-panel">
+  <section class="stage-col">
+    <button class="backslab" data-back><svg class="i" viewBox="0 0 24 24"><path d="M15.4 4 7.4 12l8 8 1.4-1.4L10.2 12l6.6-6.6z"/></svg> Back to the toolbox</button>
+    <div id="center-panel">
     <div class="net-wrap">
       <canvas id="net" width="512" height="384"></canvas>
     </div>
@@ -75,15 +80,26 @@
     <div class="preview-wrap">
       <canvas id="preview" width="360" height="300"></canvas>
     </div>
-    <div class="grow-bar" style="max-width:360px;width:100%">
-      <button id="btn-spin" title="Spin the preview">▶ spin</button>
-      <span class="hint" style="white-space:nowrap">drag to orbit · scroll to zoom</span>
+    </div>
+    <div id="view-controls">
+      <div class="grow-bar">
+        <button id="btn-spin" title="Spin the preview"></button>
+        <span class="hint canvas-help">drag to orbit · scroll to zoom</span>
+      </div>
     </div>
   </section>
 
   <!-- ── right: the base64 value in and out ──────────────────────────── -->
-  <section class="panel" id="right-panel">
-    <h2>Start from a value</h2>
+  <aside class="panel-col">
+    <button class="backslab" data-back>Back to the toolbox</button>
+    <div class="phead"><b id="pane-title">Start from a value</b><span class="grow"></span></div>
+    <div class="tab-bar head-value-tabs">
+      <button class="row-nav on" data-pane-target="load" data-pane-title="Start from a value">Value</button>
+      <button class="row-nav" data-pane-target="skin" data-pane-title="Skin file">Skin file</button>
+      <button class="row-nav" data-pane-target="generate" data-pane-title="Generate a value">Generate</button>
+    </div>
+    <div class="pbody">
+      <section class="pane" data-pane="load">
     <p class="hint">Paste a head's base64 <code>texture</code> value, a
     <code>textures.minecraft.net</code> skin URL, or a bare texture hash, then load it
     onto the canvas to edit.</p>
@@ -93,7 +109,9 @@
       <button id="btn-load">load onto canvas</button>
     </div>
 
-    <h2>Skin file</h2>
+      </section>
+
+      <section class="pane" data-pane="skin" hidden>
     <p class="hint">Upload a skin PNG to paint over it. Download saves the skin.</p>
     <div class="btn-row">
       <button id="btn-upload">upload PNG</button>
@@ -101,7 +119,9 @@
     </div>
     <input id="file-input" type="file" accept="image/png,image/*" hidden>
 
-    <h2>Generate a value</h2>
+      </section>
+
+      <section class="pane" data-pane="generate" hidden>
     <p class="hint">A texture value links to a skin hosted by Mojang. It does not contain the pixels. The painted skin is uploaded to
     <a href="https://mineskin.org" target="_blank" rel="noopener">MineSkin</a>, which
     puts it on Mojang's texture server and hands back the value.</p>
@@ -125,30 +145,42 @@
     </div>
     <p class="hint" id="status" role="status">&nbsp;</p>
 
-    <h2>Result</h2>
+    <div id="generate-result" class="generate-result" role="region" aria-label="Generated texture value" hidden>
+    <hr>
     <label>Texture value (paste into <code>texture:</code>)</label>
     <textarea id="out-value" rows="5" spellcheck="false" readonly placeholder="generate a value to fill this"></textarea>
     <div class="btn-row">
       <button id="btn-copy-value" class="copy">copy value</button>
       <button id="btn-to-input" class="ghost" title="Move it up to the load field to keep editing">edit this</button>
     </div>
-    <label style="margin-top:10px">Skin URL (works as <code>texture:</code> too)</label>
+    <label class="result-field">Skin URL (works as <code>texture:</code> too)</label>
     <input id="out-url" type="text" spellcheck="false" readonly placeholder="http://textures.minecraft.net/texture/...">
     <div class="btn-row">
       <button id="btn-copy-url" class="copy">copy URL</button>
     </div>
-    <label style="margin-top:10px">Signature <span class="muted">(C4 does not need this)</span></label>
+    <label class="result-field">Signature <span class="muted">(C4 does not need this)</span></label>
     <textarea id="out-sig" rows="2" spellcheck="false" readonly placeholder="-"></textarea>
 
-    <h2>Using it</h2>
+    <h3 class="sub">Using it</h3>
     <p class="hint">Drop the value into any C4 <code>texture</code> field: a station or
     tool in <code>config.yml</code>, a head consumable, or a
     <code>type: head</code> crop stage element in the
-    <a href="../crop-designer/index.html" style="color:var(--accent2)">crop designer</a>.
+    <a href="../crop-designer/index.html">crop designer</a>.
     Heads with the same value stack.</p>
-  </section>
-</main>
+    </div>
+      </section>
+    </div>
+  </aside>
+</div>
 
-<script src="app.js?v=6"></script>
+<nav class="mnav">
+  <button data-screen="outline" class="on">Toolbox</button>
+  <button data-screen="view">Paint</button>
+  <button data-screen="detail">Value</button>
+</nav>
+
+<script src="../shared/ui.js?v=16"></script>
+<script src="app.js?v=9"></script>
+<script>UI.initShell({ pane: "load" });</script>
 </body>
 </html>

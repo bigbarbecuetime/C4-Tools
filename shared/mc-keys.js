@@ -1,5 +1,5 @@
 /* mc-keys.js (shared) - complete vanilla key suggestion lists for the designer
- * inputs (KeyPicker dropdowns and the remaining datalists), generated from the
+ * inputs (rendered through KeyPicker), generated from the
  * server's Bukkit Material set (every non-legacy item and block). Suggestions
  * only; inputs stay free text so any custom value still works. See TODO 13.
  */
@@ -775,18 +775,5 @@ const MCKeys = (() => {
   const HOES = favorites(["WOODEN_HOE", "STONE_HOE", "COPPER_HOE", "IRON_HOE", "GOLDEN_HOE", "DIAMOND_HOE", "NETHERITE_HOE"], ITEMS);
   const HYDRATION = favorites(["WATER", "LAVA", "WATER_CAULDRON", "LAVA_CAULDRON", "POWDER_SNOW"], BLOCKS);
 
-  function fill(id, values) {
-    const dl = document.getElementById(id);
-    if (dl) dl.innerHTML = values.map(v => `<option value="${v}">`).join("");
-  }
-  // Block/item key inputs use KeyPicker (shared/key-picker.js) for previews;
-  // only the non-texture suggestion lists still go through datalists.
-  function populate() {
-    fill("dl-biomes", BIOMES);
-    fill("dl-effects", EFFECTS);
-  }
-  return { ALL, BLOCKS, ITEMS, ITEM_MODELS, BLOCK_STATES, BIOMES, EFFECTS, FERTILIZERS, HOES, HYDRATION, fill, populate };
+  return { ALL, BLOCKS, ITEMS, ITEM_MODELS, BLOCK_STATES, BIOMES, EFFECTS, FERTILIZERS, HOES, HYDRATION };
 })();
-
-MCKeys.populate();
-if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", MCKeys.populate);

@@ -1,57 +1,17 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Consumable Designer</title>
-<link rel="stylesheet" href="../shared/common.css?v=2">
-</head>
-<body>
-<header>
-  <h1>Consumable Designer</h1>
-  <nav class="suite">
-    <a href="../index.html">⌂</a>
-    <a href="../crop-designer/index.html">crops</a>
-    <a href="../farmland-designer/index.html">farmland</a>
-    <a href="#" class="here">consumables</a>
-    <a href="../head-painter/index.html">heads</a>
-    <a href="../config-editor/index.html">config</a>
-  </nav>
-  <div class="header-actions">
-    <button id="btn-upload" class="ghost" title="Load an existing consumables .yml">upload</button>
-    <button id="btn-clear" class="ghost" title="Clear all consumables">clear</button>
-    <input id="file-input" type="file" accept=".yml,.yaml,text/yaml" hidden>
-  </div>
-</header>
-
-<main class="two-col">
-  <section class="panel" id="left-panel">
-    <div class="tab-bar" id="item-tabs"></div>
-    <button id="btn-add-item" class="add">+ consumable</button>
-    <div id="form-root"></div>
-  </section>
-
-  <section class="preview-side">
-    <div id="tooltip-preview"></div>
-    <span class="hint">live item preview</span>
-  </section>
-</main>
-
-<section id="output">
-  <div class="out-col" style="grid-column:1/-1">
-    <h2>Config files</h2>
-    <div id="file-dock"></div>
-  </div>
-</section>
-
+<link rel="icon" type="image/png" href="../shared/c4-mark.png?v=4">
+<link rel="stylesheet" href="../shared/common.css?v=30">
 <style>
   /* item tooltip mock */
   #tooltip-preview {
-    margin-top: 40px;
     background: rgba(16, 0, 16, 0.94);
     border: 2px solid #25015a;
     outline: 1px solid #100010;
-    border-radius: 4px;
     padding: 14px 18px;
     min-width: 260px;
     max-width: 360px;
@@ -68,19 +28,88 @@
   #tooltip-preview .t-line { color: #5555ff; font-size: 12px; margin-top: 4px; }
   #tooltip-preview .t-warn { color: #ff5555; font-size: 12px; margin-top: 4px; }
   #tooltip-preview .t-gold { color: #ffaa00; font-size: 12px; margin-top: 4px; }
+  #tooltip-preview .t-source { color: #8a94a1; font-size: 12px; margin-top: 4px; }
+  #tooltip-preview.is-empty {
+    min-width: 0; max-width: 390px; padding: 18px; border: 0; outline: 0;
+    background: transparent; color: var(--muted); text-align: center;
+  }
 </style>
+</head>
+<body data-screen="outline">
+<div class="app">
 
-<!-- Vanilla-key suggestions (free text still allowed); populated by mc-keys.js -->
-<datalist id="dl-effects"></datalist>
+  <header class="appbar">
+    <a class="mark" href="../index.html" title="C4 home" data-logo></a>
+    <h1>Consumable Designer</h1>
+    <nav class="suite">
+    <a href="../crop-designer/index.html">crops</a>
+    <a href="../farmland-designer/index.html">farmland</a>
+    <a href="../consumable-designer/index.html" class="here">consumables</a>
+    <a href="../head-painter/index.html">heads</a>
+    <a href="../config-editor/index.html">config</a>
+    </nav>
+    <div class="header-actions">
+      <button id="btn-upload" class="tbtn" title="Load an existing consumables .yml">upload</button>
+      <button id="btn-clear" class="tbtn" title="Clear all consumables">clear</button>
+      <input id="file-input" type="file" accept=".yml,.yaml,text/yaml" hidden>
+      <button class="tbtn" data-theme-toggle title="Light / dark"></button>
+    </div>
+  </header>
 
-<script src="../shared/mc-assets.js?v=5"></script>
+  <section class="outline">
+    <nav class="tree">
+      <div class="tab-bar vertical" id="item-tabs"></div>
+      <button id="btn-add-item" class="add">+ consumable</button>
+      <hr>
+      <!-- one entry per section of the form, built by app.js -->
+      <div id="form-nav"></div>
+    </nav>
+    <div class="ofoot">
+      <button data-main="preview" class="on">Preview</button>
+      <button data-main="files">Config files</button>
+    </div>
+  </section>
+
+  <section class="stage-col">
+    <button class="backslab" data-back><svg class="i" viewBox="0 0 24 24"><path d="M15.4 4 7.4 12l8 8 1.4-1.4L10.2 12l6.6-6.6z"/></svg> Back to outline</button>
+    <div id="center-panel">
+      <div id="tooltip-preview"></div>
+    </div>
+    <div id="view-controls">
+      <div class="foot"><span class="hint">live item preview</span></div>
+    </div>
+  </section>
+
+  <aside class="panel-col">
+    <button class="backslab" data-back><svg class="i" viewBox="0 0 24 24"><path d="M15.4 4 7.4 12l8 8 1.4-1.4L10.2 12l6.6-6.6z"/></svg> Back to outline</button>
+    <div class="phead"><b id="pane-title">Identity</b><span class="grow"></span></div>
+    <div class="pbody">
+      <div id="form-root"></div>
+    </div>
+  </aside>
+
+  <section id="output">
+    <div class="out-head"><h2>Config files</h2></div>
+    <div id="file-dock"></div>
+  </section>
+</div>
+
+<nav class="mnav">
+  <button data-screen="outline" class="on">Outline</button>
+  <button data-screen="view">Preview</button>
+  <button data-screen="detail">Edit</button>
+</nav>
+
+<script src="../shared/ui.js?v=16"></script>
+<script src="../shared/mc-assets.js?v=6"></script>
 <script src="../shared/yaml-lite.js?v=3"></script>
-<script src="../shared/events-editor.js?v=2"></script>
-<script src="../shared/mc-keys.js?v=5"></script>
-<script src="../shared/key-picker.js?v=2"></script>
+<script src="../shared/events-editor.js?v=3"></script>
+<script src="../shared/mc-keys.js?v=6"></script>
+<script src="../shared/key-picker.js?v=4"></script>
 <script src="../shared/file-dock.js?v=1"></script>
 <script src="../shared/file-store.js?v=1"></script>
 <script src="../shared/legacy-text.js?v=1"></script>
-<script src="app.js?v=13"></script>
+<script src="app.js?v=20"></script>
+<script>UI.initShell();</script>
 </body>
 </html>

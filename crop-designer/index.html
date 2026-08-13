@@ -1,159 +1,280 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Crop Designer</title>
-<link rel="stylesheet" href="../shared/common.css?v=2">
+<link rel="icon" type="image/png" href="../shared/c4-mark.png?v=4">
+<link rel="stylesheet" href="../shared/common.css?v=30">
 </head>
-<body>
-<header>
-  <h1>Crop Designer</h1>
-  <nav class="suite">
-    <a href="../index.html">⌂</a>
-    <a href="#" class="here">crops</a>
+<body data-screen="outline">
+<div class="app">
+
+  <header class="appbar">
+    <a class="mark" href="../index.html" title="C4 home" data-logo></a>
+    <h1>Crop Designer</h1>
+    <nav class="suite">
+    <a href="../crop-designer/index.html" class="here">crops</a>
     <a href="../farmland-designer/index.html">farmland</a>
     <a href="../consumable-designer/index.html">consumables</a>
     <a href="../head-painter/index.html">heads</a>
     <a href="../config-editor/index.html">config</a>
-  </nav>
-  <div class="header-actions">
-    <button id="btn-upload" class="ghost" title="Load existing crop / farmland / consumables .yml">upload</button>
-    <button id="btn-clear" class="ghost" title="Clear the draft">clear</button>
-    <input id="file-input" type="file" accept=".yml,.yaml,text/yaml" hidden>
-  </div>
-</header>
-
-<main>
-  <!-- ── left: crop / seed / consumables ─────────────────────────────── -->
-  <section class="panel" id="left-panel">
-    <h2>Crop</h2>
-    <div class="form-grid">
-      <label>Id <input id="crop-id" type="text" spellcheck="false"></label>
-      <label>Display name <input id="crop-name" type="text"></label>
-      <p class="hint">Use &amp; codes for color and formatting. For example, &amp;6 makes text gold and &amp;l makes it bold. See
-        <a href="https://minecraft.wiki/w/Formatting_codes" target="_blank" rel="noopener">Formatting codes</a>
-        (Java Edition set only: 0-9a-f, k/l/m/n/o/r). Also applies to the seed name below.</p>
-      <label>Farmland id <input id="crop-farmland" type="text" spellcheck="false" placeholder="minecraft"></label>
-      <p class="hint">Use <code>minecraft</code> for normal farmland. Upload a custom farmland file from the
-      <a href="../farmland-designer/index.html" style="color:var(--accent2)">farmland designer</a> to use another type.</p>
-      <label>Total minutes <input id="crop-minutes" type="number" min="0.1" step="0.5"></label>
-      <label>Min light (0-15) <input id="crop-light" type="number" min="0" max="15"></label>
-      <label>Min water (0-1) <input id="crop-water" type="number" min="0" max="1" step="0.05"></label>
-      <label class="check"><input id="crop-replant" type="checkbox"> Replant after harvest. Right-click to harvest these crops.</label>
-      <label>Stage after harvest. Use 0 for the first stage.
-        <input id="crop-harveststage" type="number" min="0" step="1"></label>
-      <label class="check"><input id="crop-netheronly" type="checkbox"> Nether only (grows only in nether biomes)</label>
-      <div class="with-chip">
-        <label>Fertilizer item. Leave blank to choose automatically.
-          <input id="crop-fertilizer" type="text" spellcheck="false" placeholder="BONE_MEAL / MAGMA_CREAM" data-keys="fertilizers"></label>
-        <canvas class="tex-chip" id="fert-chip" width="16" height="16"></canvas>
-      </div>
-      <p class="hint">Blank fertilizer defaults to <code>BONE_MEAL</code>, or <code>MAGMA_CREAM</code>
-      for nether-only / lava-hydrated crops.</p>
-      <label class="check"><input id="crop-randomrot" type="checkbox"> Random rotation (each crop faces a random direction)</label>
-      <label class="check"><input id="crop-randomoffset" type="checkbox" checked> Random offset (small off-center shift so fields don't look grid-stamped)</label>
+    </nav>
+    <div class="header-actions">
+      <button id="btn-upload" class="tbtn" title="Load existing crop / farmland / consumables .yml">upload</button>
+      <button id="btn-clear" class="tbtn" title="Clear the draft">clear</button>
+      <input id="file-input" type="file" accept=".yml,.yaml,text/yaml" hidden>
+      <button class="tbtn" data-theme-toggle title="Light / dark"></button>
     </div>
+  </header>
 
-    <h2>mcMMO (optional)</h2>
-    <p class="hint">Used only when the mcMMO plugin is installed. Harvesting grants Herbalism XP,
-    and double drops follow mcMMO's Herbalism skill (Green Terra triples).</p>
-    <div class="form-grid">
-      <label>Herbalism XP per harvest <input id="crop-herbxp" type="number" min="0" step="1" placeholder="50"></label>
-      <label class="check"><input id="crop-doubledrops" type="checkbox" checked> Allow Herbalism double drops on the produce</label>
+  <!-- ── tool rail ─────────────────────────────────────────────────────── -->
+  <!-- ── outline: one part of the crop at a time ───────────────────────── -->
+  <section class="outline">
+    <nav class="tree">
+      <div class="tab-bar vertical" id="crop-tabs"></div>
+      <button id="btn-add-crop" class="add">+ crop</button>
+      <hr>
+      <button class="row-nav on" data-pane-target="crop">Crop</button>
+      <button class="row-nav" data-pane-target="stages">Stages</button>
+      <button class="row-nav" data-pane-target="seed">Seed</button>
+      <button class="row-nav" data-pane-target="harvest" data-pane-title="Harvest results">Harvest results</button>
+      <button class="row-nav" data-pane-target="biomes">Biomes</button>
+      <button class="row-nav" data-pane-target="effects">Effects</button>
+      <button class="row-nav" data-pane-target="mcmmo" data-pane-title="mcMMO (optional)">mcMMO</button>
+    </nav>
+    <div class="ofoot">
+      <button data-main="preview" class="on">Preview</button>
+      <button data-main="files">Config files</button>
     </div>
-
-    <h2>Seed</h2>
-    <div class="form-grid">
-      <label>Seed name <input id="seed-name" type="text"></label>
-      <div class="name-preview" id="seed-name-preview"></div>
-      <div class="with-chip">
-        <label>Seed item model <input id="seed-model" type="text" spellcheck="false" data-keys="item-models"></label>
-        <canvas class="tex-chip" id="seed-chip" width="16" height="16"></canvas>
-      </div>
-      <label>Grass pool weight <input id="crop-grasschance" type="number" min="0" step="0.05"></label>
-      <p class="hint" id="crop-grasschance-warn" style="color:var(--warn);display:none">
-        0 = this crop's seed will never drop from grass/ferns/bushes, in any biome.</p>
-      <label class="check"><input id="seed-isconsumable" type="checkbox"> Consumable is seed (carrot-style)</label>
-      <p class="hint">Seeds drop from grass and small plants in the crop's natural biomes.
-      <code>grass_seeds.drop_chance</code> controls how often any seed drops. This weight
-      chooses which seed drops. A weight of 0.3 is three times as likely as 0.1.
-      Choose "consumable is seed" when the harvest and seed are the same item, like a carrot.</p>
-    </div>
-
-    <h2>Biomes</h2>
-    <div class="form-grid">
-      <div>
-        <label class="ms-label">Natural biomes</label>
-        <div id="crop-biomes" class="multi-select"></div>
-      </div>
-      <label>Outside of biome growth rate (0-1) <input id="crop-outsiderate" type="number" min="0" max="1" step="0.05"></label>
-      <p class="hint">Full speed inside natural biomes, otherwise growth is multiplied
-      by this rate. Leaving this empty is full speed everywhere.</p>
-    </div>
-
-    <h2>Harvest results</h2>
-    <div id="harvest-list"></div>
-    <button id="btn-add-harvest" class="add">+ result</button>
-
-    <h2>Effects</h2>
-    <p class="hint">Sounds and particles played crop-wide. <code>on_punch</code> fires when
-    the crop is punched/broken, <code>on_harvest</code> when a ripe crop is harvested, and
-    <code>ambient</code> repeatedly while it grows. Each growth stage can override these
-    (see a stage's "stage effects").</p>
-    <div id="crop-events"></div>
-
-    <h2>Consumables</h2>
-    <p class="hint">Harvest results and the seed reference consumable ids. Create and edit
-    those consumables in the <a href="../consumable-designer/index.html" style="color:var(--accent2)">consumable designer</a>,
-    then drop its .yml into <code>plugins/C4/consumables/</code>.</p>
   </section>
 
-  <!-- ── center: 3D preview ──────────────────────────────────────────── -->
-  <section id="center-panel">
-    <canvas id="preview" width="900" height="760"></canvas>
+  <!-- ── render window ─────────────────────────────────────────────────── -->
+  <section class="stage-col">
+    <button class="backslab" data-back><svg class="i" viewBox="0 0 24 24"><path d="M15.4 4 7.4 12l8 8 1.4-1.4L10.2 12l6.6-6.6z"/></svg> Back to outline</button>
+    <div id="center-panel">
+      <canvas id="preview" width="900" height="760"></canvas>
+      <div id="crop-preview-empty" class="empty-state" hidden>
+        <strong>No crop selected</strong>
+        Upload a farming YAML or add a crop from the outline.
+      </div>
+      <div id="preview-toasts" aria-live="polite" aria-atomic="false"></div>
+      <div id="mcmmo-preview-bar" class="preview-status-bar" aria-live="polite" hidden></div>
+      <div id="preview-summary" aria-live="polite"></div>
+    </div>
     <div id="view-controls">
+      <!-- gizmo.js inserts its transform bar here -->
       <div class="stage-bar" id="stage-bar"></div>
       <div class="grow-bar">
-        <button id="btn-grow" title="Animate growth">▶ grow</button>
-        <input id="progress-slider" type="range" min="0" max="1000" value="1000">
-        <span id="progress-label">100%</span>
+        <button id="btn-grow" title="Animate growth"></button>
+        <div class="growth">
+          <div class="growth-fill"></div>
+          <div class="growth-seps"></div>
+          <div class="growth-head"></div>
+          <input id="progress-slider" type="range" min="0" max="1000" value="1000" aria-label="growth">
+        </div>
+        <span id="progress-label">100% · 20 / 20 min</span>
       </div>
-      <label class="check"><input type="checkbox" id="show-hitbox" checked> show hitbox</label>
-      <span class="hint">drag to orbit · scroll to zoom</span>
+      <div class="foot">
+        <span class="hint">drag to orbit · scroll to zoom</span>
+      </div>
     </div>
   </section>
 
-  <!-- ── right: stages & elements ────────────────────────────────────── -->
-  <section class="panel" id="right-panel">
-    <h2>Stages</h2>
-    <p class="hint">Add items, blocks, or heads to each stage. Positions start at the center of the farmland.
-    Each element turns around its own center. Heads accept a skin URL or texture value.</p>
-    <div id="stage-list"></div>
-    <button id="btn-add-stage" class="add">+ stage</button>
-  </section>
-</main>
+  <!-- ── panel: whatever the outline has open ──────────────────────────── -->
+  <aside class="panel-col">
+    <button class="backslab" data-back><svg class="i" viewBox="0 0 24 24"><path d="M15.4 4 7.4 12l8 8 1.4-1.4L10.2 12l6.6-6.6z"/></svg> Back to outline</button>
+    <div class="phead"><b id="pane-title">Crop</b><span class="grow"></span></div>
+    <div class="pbody">
+      <div id="crop-editor-empty" class="empty-state" hidden>
+        <strong>Start with a crop</strong>
+        Add one from the outline, or upload an existing farming YAML.
+      </div>
 
-<!-- ── bottom: every config file created / uploaded this session ───────── -->
-<section id="output">
-  <div class="out-col" style="grid-column:1/-1">
-    <h2>Config files</h2>
+      <!-- Crop: what it is and how fast it grows -->
+      <section class="pane" data-pane="crop">
+        <div class="form-grid">
+          <label>Id <input id="crop-id" type="text" spellcheck="false"></label>
+          <label>Display name <input id="crop-name" type="text" data-fmt></label>
+          <p class="hint">Use &amp; codes for color and formatting. For example, &amp;6 makes text gold and &amp;l makes it bold. See
+            <a href="https://minecraft.wiki/w/Formatting_codes" target="_blank" rel="noopener">Formatting codes</a>
+            (Java Edition set only: 0-9a-f, k/l/m/n/o/r). Also applies to the seed name below.</p>
+          <div class="with-chip">
+            <label>Farmland id <input id="crop-farmland" type="text" spellcheck="false" placeholder="minecraft" data-keys="farmlands"></label>
+            <canvas class="tex-chip" id="farmland-chip" width="16" height="16" aria-label="Farmland preview"></canvas>
+          </div>
+          <p class="hint warn" id="farmland-warning" hidden></p>
+          <p class="hint">Use <code>minecraft</code> for normal farmland. Upload a custom farmland file from the
+          <a href="../farmland-designer/index.html">farmland designer</a> to use another type.</p>
+          <label>Total minutes <input id="crop-minutes" type="number" min="0.1" step="0.5"></label>
+          <label>Min light <span class="meter-with-source"><canvas id="light-source-chip" class="meter-source-chip" width="16" height="16" title="Lantern: light level 15"></canvas><input id="crop-light" type="number" min="0" max="15" step="1" data-range data-cells="16" data-meter="light" data-reverse></span></label>
+          <label><span id="hydration-label">Min water</span><input id="crop-water" type="number" min="0" max="1" step="0.05" data-range data-meter="water"></label>
+          <label class="check"><input id="crop-netheronly" type="checkbox"> Nether only</label>
+          <p class="foot-note">grows only in nether biomes</p>
+          <div class="with-chip">
+            <label>Fertilizer item
+              <input id="crop-fertilizer" type="text" spellcheck="false" placeholder="BONE_MEAL / MAGMA_CREAM" data-keys="fertilizers"></label>
+            <canvas class="tex-chip" id="fert-chip" width="16" height="16"></canvas>
+          </div>
+          <p class="foot-note plain">Leave blank to choose automatically.</p>
+          <p class="hint">Blank fertilizer defaults to <code>BONE_MEAL</code>, or <code>MAGMA_CREAM</code>
+          for nether-only / lava-hydrated crops.</p>
+        </div>
+      </section>
+
+      <!-- Stages: the build work -->
+      <section class="pane" data-pane="stages" hidden>
+        <div class="subsection appearance-options">
+          <div class="sub-head"><strong>Field appearance</strong></div>
+          <label class="check"><input id="crop-randomrot" type="checkbox"> Random rotation</label>
+          <p class="foot-note">each crop faces a random direction</p>
+          <label class="check"><input id="crop-randomoffset" type="checkbox" checked> Random offset</label>
+          <p class="foot-note">small off-center shift so fields do not look grid-stamped</p>
+          <p class="hint">Turn on the 5×5 field in the preview gizmos to compare the variation.</p>
+        </div>
+        <p class="hint">Add items, blocks, or heads to each stage. Positions start at the center of the farmland.
+        Each element turns around its own center. Heads accept a skin URL or texture value.</p>
+        <div id="stage-list" data-sortable></div>
+        <button id="btn-add-stage" class="add">+ stage</button>
+      </section>
+
+      <!-- what it gives back -->
+      <section class="pane" data-pane="harvest" hidden>
+        <div class="subsection">
+          <div class="sub-head"><strong>Harvest preview</strong></div>
+          <button id="btn-harvest-preview" type="button" class="primary player-preview-action">Break ripe crop</button>
+          <label class="check"><input id="crop-replant" type="checkbox"> Replant after harvest</label>
+          <div id="harvest-stage-control" class="conditional" hidden>
+            <label>Stage after harvest <input id="crop-harveststage" type="number" min="0" step="1"></label>
+            <p class="foot-note plain">Use 0 for the first stage.</p>
+          </div>
+          <p class="hint">Press the button to perform the same ripe-crop action a player would use. The preview rolls each configured result once.</p>
+        </div>
+        <div class="subsection">
+          <div class="sub-head"><strong>Seeds</strong></div>
+          <label class="check"><input id="crop-harvest-seeds" type="checkbox" checked> Drop seeds on harvest</label>
+          <div id="harvest-seed-range" class="row harvest-seed-range">
+            <div class="harvest-seed-visual"><canvas id="harvest-seed-chip" class="tex-chip" width="16" height="16"></canvas><span>Seed item</span></div>
+            <label>min <input id="crop-harvest-seed-min" type="number" min="0" step="1" value="1"></label>
+            <label>max <input id="crop-harvest-seed-max" type="number" min="0" step="1" value="3"></label>
+          </div>
+          <div id="harvest-seed-warning" class="warning-box" hidden>Warning: no seeds will drop from this crop.</div>
+        </div>
+        <div class="sub-head result-category-head"><strong>Consumable results</strong></div>
+        <div id="harvest-list"></div>
+        <button id="btn-add-harvest" class="add">+ result</button>
+      </section>
+
+      <!-- how a player gets it -->
+      <section class="pane" data-pane="seed" hidden>
+        <div class="subsection">
+          <div class="sub-head"><strong>Seed drop preview</strong></div>
+          <button id="btn-seed-preview" type="button" class="primary player-preview-action">Break short grass</button>
+          <p class="hint">Press the button to break vanilla short grass. The result reports only how many seeds from this crop dropped.</p>
+        </div>
+        <div class="form-grid">
+          <label class="check"><input id="seed-isconsumable" type="checkbox"> Use a consumable as the seed</label>
+          <p class="foot-note">for carrot-style crops where produce is replanted</p>
+          <div id="seed-custom-fields" class="conditional">
+            <label>Seed name <input id="seed-name" type="text" data-fmt></label>
+            <div class="name-preview" id="seed-name-preview" hidden></div>
+            <div class="with-chip">
+              <label>Seed item model <input id="seed-model" type="text" spellcheck="false" data-keys="item-models"></label>
+              <canvas class="tex-chip" id="seed-chip" width="16" height="16"></canvas>
+            </div>
+          </div>
+          <div id="seed-consumable-fields" class="conditional" hidden>
+            <div class="with-chip">
+              <label>Seed consumable id <input id="seed-consumable" type="text" spellcheck="false" data-keys="consumables"></label>
+              <canvas class="tex-chip" id="seed-consumable-chip" width="16" height="16"></canvas>
+            </div>
+            <p class="hint warn" id="seed-consumable-warning" hidden></p>
+          </div>
+          <label>Grass pool weight <input id="crop-grasschance" type="number" min="0" step="0.05"></label>
+          <p class="hint warn" id="crop-grasschance-warn" style="display:none">
+            0 = this crop's seed will never drop from grass/ferns/bushes, in any biome.</p>
+          <p class="hint">Seeds drop from grass and small plants in the crop's natural biomes.
+          <code>grass_seeds.drop_chance</code> controls how often any seed drops. This weight
+          chooses which seed drops. A weight of 0.3 is three times as likely as 0.1.
+          Choose "consumable is seed" when the harvest and seed are the same item, like a carrot.</p>
+        </div>
+      </section>
+
+      <!-- where it grows -->
+      <section class="pane" data-pane="biomes" hidden>
+        <div class="form-grid">
+          <div class="subsection playback-config">
+            <div class="sub-head"><strong>Growth playback</strong></div>
+            <label>Preview location <select id="preview-biome"></select></label>
+            <label>Playback speed
+              <select id="preview-speed"><option value="1">1×</option><option value="10">10×</option><option value="30" selected>30×</option><option value="60">60×</option></select>
+            </label>
+            <p class="hint">Playback follows the configured crop time and biome multiplier.</p>
+          </div>
+          <div>
+            <label class="ms-label">Natural biomes</label>
+            <div id="crop-biomes" class="multi-select"></div>
+          </div>
+          <label>Outside of biome growth rate
+            <input id="crop-outsiderate" type="number" min="0" max="1" step="0.05" data-range></label>
+          <p class="hint">Full speed inside natural biomes, otherwise growth is multiplied
+          by this rate. Leaving this empty is full speed everywhere.</p>
+        </div>
+      </section>
+
+      <!-- polish -->
+      <section class="pane" data-pane="effects" hidden>
+        <p class="hint">Sounds and particles played crop-wide. <code>on_punch</code> fires when
+        the crop is punched/broken, <code>on_harvest</code> when a ripe crop is harvested, and
+        <code>ambient</code> repeatedly while it grows. Each growth stage can override these
+        (see a stage's "stage effects").</p>
+        <div id="crop-events"></div>
+        <div id="effect-preview-controls" class="preview-button-list"></div>
+        <p id="effect-preview-status" class="inline-note"></p>
+      </section>
+
+      <section class="pane" data-pane="mcmmo" hidden>
+        <p class="hint">Used only when the mcMMO plugin is installed. The preview loops one crop harvest,
+        its Herbalism XP award, and the resulting example skill-bar change. Double drops follow mcMMO's
+        Herbalism skill (Green Terra triples).</p>
+        <div class="form-grid">
+          <label>Herbalism XP per harvest <input id="crop-herbxp" type="number" min="0" step="1" placeholder="50"></label>
+          <label class="check"><input id="crop-doubledrops" type="checkbox" checked> Allow Herbalism double drops on the produce</label>
+          <div class="subsection playback-config">
+            <div class="sub-head"><strong>Skill bar example</strong></div>
+            <label>Current XP in level <input id="preview-herb-current" type="number" min="0" step="1" value="120"></label>
+            <label>XP needed for next level <input id="preview-herb-next" type="number" min="1" step="1" value="1000"></label>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </aside>
+
+  <!-- ── every config file created / uploaded this session ─────────────── -->
+  <section id="output">
+    <div class="out-head"><h2>Config files</h2></div>
     <div id="file-dock"></div>
-  </div>
-</section>
+  </section>
+</div>
 
-<!-- Vanilla-key suggestions (free text still allowed); populated by mc-keys.js -->
-<datalist id="dl-biomes"></datalist>
+<nav class="mnav">
+  <button data-screen="outline" class="on">Outline</button>
+  <button data-screen="view">Render</button>
+  <button data-screen="detail">Edit</button>
+</nav>
 
-<script src="../shared/mc-assets.js?v=5"></script>
+<script src="../shared/mc-assets.js?v=6"></script>
 <script src="../shared/yaml-lite.js?v=3"></script>
-<script src="../shared/events-editor.js?v=2"></script>
-<script src="../shared/mc-keys.js?v=5"></script>
-<script src="../shared/key-picker.js?v=2"></script>
+<script src="../shared/events-editor.js?v=3"></script>
+<script src="../shared/mc-keys.js?v=6"></script>
+<script src="../shared/key-picker.js?v=4"></script>
 <script src="../shared/file-dock.js?v=1"></script>
 <script src="../shared/file-store.js?v=1"></script>
 <script src="../shared/legacy-text.js?v=1"></script>
-<script src="app.js?v=16"></script>
-<script src="gizmo.js?v=3"></script>
+<script src="../shared/ui.js?v=16"></script>
+<script src="app.js?v=46"></script>
+<script src="gizmo.js?v=9"></script>
+<script>UI.initShell({ pane: "crop" });</script>
 </body>
 </html>

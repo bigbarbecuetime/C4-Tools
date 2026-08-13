@@ -691,7 +691,12 @@ const MCAssets = (() => {
       : face === "bottom"
         ? [`block/${n}_bottom.png`, `block/${n}_top.png`, `block/${n}.png`]
         : [`block/${n}_side.png`, `block/${n}.png`, `block/${n}_top.png`];
-    return loadFirst(`block:${n}:${face}`, candidates, n);
+    // Vanilla's grass top is grayscale and receives a biome tint in-game.
+    // Side/bottom faces do not share that tint, so choose it per face rather
+    // than tinting the entire grass block (which produced the gray preview
+    // surface visible in the seed playback).
+    const tintName = face === "top" && TINTS[`${n}_top`] ? `${n}_top` : n;
+    return loadFirst(`block:${n}:${face}`, candidates, tintName);
   }
 
   return { item, block, blockSprite, blockModel, modelTexture, cropState, stateVariants, headCube, headFace, edgeRuns, onReady, colorFor, clean };

@@ -1,145 +1,211 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Config Editor</title>
-<link rel="stylesheet" href="../shared/common.css?v=2">
+<link rel="icon" type="image/png" href="../shared/c4-mark.png?v=4">
+<link rel="stylesheet" href="../shared/common.css?v=33">
 </head>
-<body>
-<header>
-  <h1>Config Editor</h1>
-  <nav class="suite">
-    <a href="../index.html">⌂</a>
+<body data-screen="outline">
+<div class="app two">
+
+  <header class="appbar">
+    <a class="mark" href="../index.html" title="C4 home" data-logo></a>
+    <h1>Config Editor</h1>
+    <nav class="suite">
     <a href="../crop-designer/index.html">crops</a>
     <a href="../farmland-designer/index.html">farmland</a>
     <a href="../consumable-designer/index.html">consumables</a>
     <a href="../head-painter/index.html">heads</a>
-    <a href="#" class="here">config</a>
-  </nav>
-  <div class="header-actions">
-    <button id="btn-upload" class="ghost" title="Load an existing config.yml">upload</button>
-    <button id="btn-clear" class="ghost" title="Reset to defaults">reset</button>
-    <input id="file-input" type="file" accept=".yml,.yaml,text/yaml" hidden>
-  </div>
-</header>
-
-<main class="two-col">
-  <section class="panel" id="left-panel">
-    <p class="hint">Edits the plugin's main <code>config.yml</code>. Sections this editor
-    doesn't show (tools, routing, quality consumption) are preserved untouched
-    when you upload an existing file. Drop the result into
-    <code>plugins/C4/config.yml</code>.</p>
-
-    <h2>General</h2>
-    <div class="form-grid">
-      <label class="check"><input id="cfg-debug" type="checkbox"> Debug logging</label>
+    <a href="../config-editor/index.html" class="here">config</a>
+    </nav>
+    <div class="header-actions">
+      <button id="btn-upload" class="tbtn" title="Load an existing config.yml">upload</button>
+      <button id="btn-clear" class="tbtn" title="Reset to defaults">reset</button>
+      <input id="file-input" type="file" accept=".yml,.yaml,text/yaml" hidden>
+      <button class="tbtn" data-theme-toggle title="Light / dark"></button>
     </div>
+  </header>
 
-    <h2>Visuals</h2>
-    <div class="form-grid">
-      <label class="check"><input id="cfg-glint" type="checkbox"> Enchant glint on crafted items</label>
-      <label class="check"><input id="cfg-particles" type="checkbox"> Particle effects</label>
+  <section class="outline">
+    <nav class="tree">
+      <button class="row-nav on" data-pane-target="general">General</button>
+      <button class="row-nav" data-pane-target="visuals">Visuals</button>
+      <button class="row-nav" data-pane-target="highlight" data-pane-title="Crop highlight (look-at outline)">Crop highlight</button>
+      <button class="row-nav" data-pane-target="quality" data-pane-title="Quality tiers">Quality tiers</button>
+      <button class="row-nav" data-pane-target="stations" data-pane-title="Stations & tools">Stations & tools</button>
+      <button class="row-nav" data-pane-target="insanity">Insanity</button>
+      <button class="row-nav" data-pane-target="spoilage" data-pane-title="Vanilla food spoilage">Vanilla food spoilage</button>
+      <button class="row-nav" data-pane-target="crops" data-pane-title="Vanilla crops">Vanilla crops</button>
+      <button class="row-nav" data-pane-target="biomegroups" data-pane-title="Biome groups">Biome groups</button>
+      <button class="row-nav" data-pane-target="consumablegroups" data-pane-title="Consumable groups">Consumable groups</button>
+      <button class="row-nav" data-pane-target="mcmmo" data-pane-title="mcMMO integration">mcMMO</button>
+    </nav>
+    <div class="ofoot">
+      <button data-main="preview" class="on">Settings</button>
+      <button data-main="files">config.yml</button>
     </div>
-
-    <h2>mcMMO integration</h2>
-    <p class="hint">Active only when the mcMMO plugin is installed. Crops grant Herbalism XP and
-    roll Herbalism double drops; foods with a diet benefit from Farmer's/Fisherman's Diet.</p>
-    <div class="form-grid">
-      <label class="check"><input id="mc-enabled" type="checkbox"> Enable mcMMO integration</label>
-      <label>Default Herbalism XP per harvest <input id="mc-xp" type="number" min="0" step="1"></label>
-      <label>Max double-drop chance (0-1, at level 1000) <input id="mc-chance" type="number" min="0" max="1" step="0.05"></label>
-    </div>
-
-    <h2>Crop highlight (look-at outline)</h2>
-    <div class="form-grid">
-      <div class="with-chip">
-        <label>Bar block <input id="ch-block" type="text" spellcheck="false" placeholder="GLASS" data-keys="blocks"></label>
-        <canvas class="tex-chip" id="ch-chip" width="16" height="16"></canvas>
-      </div>
-      <label>Bar thickness (0.005-0.5) <input id="ch-thickness" type="number" min="0.005" max="0.5" step="0.005"></label>
-      <label class="check"><input id="ch-glow" type="checkbox"> Glowing outline (see through walls)</label>
-      <label>Glow color (name or #RRGGBB) <input id="ch-color" type="text" spellcheck="false" placeholder="BLACK"></label>
-    </div>
-
-    <h2>Insanity</h2>
-    <p class="hint">The 0-100 psychological score that drives hallucination effects.</p>
-    <div class="form-grid">
-      <label>Decay per 5s check <input id="ins-decay" type="number" step="0.1"></label>
-      <label>Dose factor <input id="ins-dose" type="number" step="1"></label>
-      <label>Craving gain <input id="ins-craving" type="number" step="0.1"></label>
-      <label>Withdrawal gain <input id="ins-withdrawal" type="number" step="0.1"></label>
-      <label>Damage gain <input id="ins-damage" type="number" step="0.1"></label>
-    </div>
-
-    <h2>Quality tiers</h2>
-    <p class="hint">Thresholds are the minimum prep score for each tier (must increase, 0-1).
-    Multipliers scale effect duration per tier.</p>
-    <div id="quality-thresholds"></div>
-    <div id="quality-multipliers"></div>
-    <h3 class="sub">Ruined batch item</h3>
-    <div class="form-grid">
-      <div class="with-chip">
-        <label>Material <input id="ruined-mat" type="text" spellcheck="false" placeholder="LEAF_LITTER" data-keys="items"></label>
-        <canvas class="tex-chip" id="ruined-chip" width="16" height="16"></canvas>
-      </div>
-      <label>Name <input id="ruined-name" type="text"></label>
-      <label>Lore <input id="ruined-lore" type="text"></label>
-    </div>
-
-    <h2>Stations</h2>
-    <p class="hint">Placed crafting devices. A process handled by any station is crafted at that
-    station's menu instead of the grid. <code>oven_top</code> stations install on a
-    furnace, smoker, blast furnace, campfire, or soul campfire. A <code>block</code> makes
-    it a plate station (rendered as that block with embedded heads). An optional recipe crafts
-    the station's head item in a vanilla grid.</p>
-    <div id="stations"></div>
-    <button id="btn-add-station" class="add">+ station</button>
-
-    <h2>Vanilla food spoilage</h2>
-    <p class="hint">Minutes before plain vanilla foods spoil after entering an inventory.
-    0 = never spoils.</p>
-    <div class="form-grid">
-      <label>Default lifetime (minutes) <input id="vf-default" type="number" min="0" step="1"></label>
-    </div>
-    <div id="vf-items"></div>
-    <button id="btn-add-vf" class="add">+ food override</button>
-
-    <h2>Biome groups</h2>
-    <p class="hint">Named, composable lists of biome keys (a member may be another group).</p>
-    <div id="biome-groups"></div>
-    <button id="btn-add-bg" class="add">+ biome group</button>
-
-    <h2>Consumable groups</h2>
-    <p class="hint">Named groups of materials / consumable ids / other groups, usable as recipe tags.</p>
-    <div id="consumable-groups"></div>
-    <button id="btn-add-cg" class="add">+ consumable group</button>
-
-    <h2>Vanilla crops</h2>
-    <p class="hint">Vanilla crops grow at full speed in their natural biomes and at the
-    outside-rate elsewhere. Biomes may be keys or biome-group names.</p>
-    <div class="form-grid">
-      <label>Default outside rate (0-1) <input id="vc-default" type="number" min="0" max="1" step="0.05"></label>
-    </div>
-    <div id="vanilla-crops"></div>
-    <button id="btn-add-vc" class="add">+ crop</button>
   </section>
 
-  <section class="preview-side" style="align-items:stretch">
-    <div class="out-head" style="padding:0 4px">
-      <h2 style="flex:1;border:none;margin:8px 0">config.yml</h2>
-      <button data-copy="yaml-out" class="ghost copy">copy</button>
-      <button id="btn-dl" class="ghost">download</button>
-    </div>
-    <pre id="yaml-out" style="flex:1;max-height:calc(100vh - 120px)"></pre>
-  </section>
-</main>
+  <aside class="panel-col wide">
+    <button class="backslab" data-back><svg class="i" viewBox="0 0 24 24"><path d="M15.4 4 7.4 12l8 8 1.4-1.4L10.2 12l6.6-6.6z"/></svg> Back to outline</button>
+    <div class="phead"><b id="pane-title">General</b><span class="grow"></span></div>
+    <div class="pbody">
 
-<script src="../shared/mc-assets.js?v=5"></script>
+      <section class="pane" data-pane="general">
+        <p class="hint">Edits the plugin's main <code>config.yml</code>. Sections this editor
+        doesn't show (routing, quality consumption) are preserved untouched
+        when you upload an existing file. Drop the result into
+        <code>plugins/C4/config.yml</code>.</p>
+        <div class="form-grid">
+          <label class="check"><input id="cfg-debug" type="checkbox"> Debug logging</label>
+        </div>
+      </section>
+
+      <section class="pane" data-pane="visuals" hidden>
+        <div class="form-grid">
+          <label class="check"><input id="cfg-glint" type="checkbox"> Enchant glint on crafted items</label>
+          <label class="check"><input id="cfg-particles" type="checkbox"> Particle effects</label>
+        </div>
+      </section>
+
+      <section class="pane" data-pane="highlight" hidden>
+        <div class="config-visual-preview">
+          <canvas id="highlight-preview" width="760" height="300" role="img"
+            aria-label="Example one-block crop hitbox outline"></canvas>
+          <div class="config-preview-caption">
+            <strong>Example crop hitbox</strong>
+            <span id="highlight-preview-detail">1 block wide × 1 block tall</span>
+          </div>
+        </div>
+        <div class="form-grid">
+          <div class="with-chip">
+            <label>Outline block <input id="ch-block" type="text" spellcheck="false" placeholder="BLACK_STAINED_GLASS" data-keys="blocks"></label>
+            <canvas class="tex-chip" id="ch-chip" width="16" height="16"></canvas>
+          </div>
+          <label>Outline thickness (blocks) <input id="ch-thickness" type="number" min="0.005" max="0.5" step="0.005" data-range></label>
+          <label class="check"><input id="ch-glow" type="checkbox"> Glowing outline</label>
+          <p class="foot-note">see through walls</p>
+          <div id="ch-glow-options" class="conditional" hidden>
+            <label>Glow color <input id="ch-color" type="text" spellcheck="false" placeholder="BLACK"></label>
+            <p class="foot-note plain">name or #RRGGBB</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="pane" data-pane="quality" hidden>
+        <p class="hint">Crafting produces a final preparation score from 0 to 100%. The score lands
+        in one band below. Scores below Poor ruin the batch; every other tier changes how long
+        the crafted item's configured effects last.</p>
+        <h3 class="sub">Score bands</h3>
+        <div id="quality-score-map"></div>
+        <p id="quality-threshold-warning" class="warning-box" hidden>Tier start scores must rise
+        from Poor through Perfect. The server uses its default bands until this is corrected.</p>
+        <h3 class="sub">Tier settings</h3>
+        <div id="quality-tier-settings"></div>
+        <h3 class="sub">Ruined batch item</h3>
+        <p class="hint">Given instead of the crafted result when the score is below the Poor start.</p>
+        <div class="form-grid">
+          <div class="with-chip">
+            <label>Material <input id="ruined-mat" type="text" spellcheck="false" placeholder="LEAF_LITTER" data-keys="items"></label>
+            <canvas class="tex-chip" id="ruined-chip" width="16" height="16"></canvas>
+          </div>
+          <label>Name <input id="ruined-name" type="text" data-fmt></label>
+          <label>Lore <input id="ruined-lore" type="text"></label>
+        </div>
+      </section>
+
+      <section class="pane" data-pane="stations" hidden>
+        <h3 class="sub">Stations</h3>
+        <div id="stations"></div>
+        <h3 class="sub">Tools</h3>
+        <div id="tool-lists"></div>
+      </section>
+
+      <section class="pane" data-pane="insanity" hidden>
+        <p class="hint">The 0-100 psychological score that drives hallucination effects.</p>
+        <div class="form-grid">
+          <label>Decay per 5s check <input id="ins-decay" type="number" step="0.1"></label>
+          <label>Dose factor <input id="ins-dose" type="number" step="1"></label>
+          <label>Craving gain <input id="ins-craving" type="number" step="0.1"></label>
+          <label>Withdrawal gain <input id="ins-withdrawal" type="number" step="0.1"></label>
+          <label>Damage gain <input id="ins-damage" type="number" step="0.1"></label>
+        </div>
+      </section>
+
+      <section class="pane" data-pane="spoilage" hidden>
+        <p class="hint">How long plain vanilla foods last after entering an inventory. The exported
+        config stays in minutes; the friendly time beneath each value is for readability.</p>
+        <div class="form-grid">
+          <label>Default lifetime
+            <span class="input-with-unit"><input id="vf-default" type="number" min="0" step="1"><span class="input-unit">min</span></span>
+            <output id="vf-default-readable" class="duration-readout"></output>
+          </label>
+        </div>
+        <div id="vf-items"></div>
+        <button id="btn-add-vf" class="add">+ food override</button>
+      </section>
+
+      <section class="pane" data-pane="crops" hidden>
+        <p class="hint">Vanilla crops grow at full speed in their natural biomes and at the
+        outside-rate elsewhere. Biomes may be keys or biome-group names.</p>
+        <div class="form-grid">
+          <label>Default outside rate <input id="vc-default" type="number" min="0" max="1" step="0.05" data-range></label>
+        </div>
+        <div id="vanilla-crops"></div>
+        <button id="btn-add-vc" class="add">+ crop</button>
+      </section>
+
+      <section class="pane" data-pane="biomegroups" hidden>
+        <p class="hint">Named, composable lists of biome keys (a member may be another group).</p>
+        <div id="biome-groups"></div>
+        <button id="btn-add-bg" class="add">+ biome group</button>
+      </section>
+
+      <section class="pane" data-pane="consumablegroups" hidden>
+        <p class="hint">Named groups of materials / consumable ids / other groups, usable as recipe tags.</p>
+        <div id="consumable-groups"></div>
+        <button id="btn-add-cg" class="add">+ consumable group</button>
+      </section>
+
+      <section class="pane" data-pane="mcmmo" hidden>
+        <p class="hint">Active only when the mcMMO plugin is installed. Crops grant Herbalism XP and
+        roll Herbalism double drops; foods with a diet benefit from Farmer's/Fisherman's Diet.</p>
+        <div class="form-grid">
+          <label class="check"><input id="mc-enabled" type="checkbox"> Enable mcMMO integration</label>
+          <label>Default Herbalism XP per harvest <input id="mc-xp" type="number" min="0" step="1"></label>
+          <label>Max double-drop chance <input id="mc-chance" type="number" min="0" max="1" step="0.05" data-range></label>
+          <p class="foot-note plain">at level 1000</p>
+        </div>
+      </section>
+
+    </div>
+  </aside>
+
+  <section id="output">
+    <div class="out-head">
+      <h2>config.yml</h2><span class="grow"></span>
+      <button data-copy="yaml-out" class="copy tbtn">copy</button>
+      <button id="btn-dl" class="tbtn">download</button>
+    </div>
+    <pre id="yaml-out"></pre>
+  </section>
+</div>
+
+<nav class="mnav">
+  <button data-screen="outline" class="on">Outline</button>
+  <button data-screen="detail">Edit</button>
+  <button data-screen="view">config.yml</button>
+</nav>
+
+<script src="../shared/ui.js?v=16"></script>
+<script src="../shared/mc-assets.js?v=6"></script>
 <script src="../shared/yaml-lite.js?v=3"></script>
-<script src="../shared/mc-keys.js?v=5"></script>
-<script src="../shared/key-picker.js?v=2"></script>
-<script src="default-config.js?v=1"></script>
-<script src="app.js?v=5"></script>
+<script src="../shared/mc-keys.js?v=6"></script>
+<script src="../shared/key-picker.js?v=5"></script>
+<script src="default-config.js?v=3"></script>
+<script src="app.js?v=18"></script>
+<script>UI.initShell({ pane: "general" });</script>
 </body>
 </html>

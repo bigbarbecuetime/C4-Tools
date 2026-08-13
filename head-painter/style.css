@@ -5,9 +5,11 @@
 .tool-grid button { flex: 1 1 46%; padding: 5px 6px; }
 .tool-grid.two button { flex: 1 1 0; }
 .tool-grid button.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--bg);
+  background-color: var(--frost);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, .10), rgba(255, 255, 255, 0));
+  color: var(--frost-text);
+  box-shadow: inset 0 0 0 1px var(--frost-edge),
+              inset 2px 2px 0 var(--edge-l), inset -2px -2px 0 var(--edge-d);
 }
 
 .color-row { display: flex; gap: 6px; align-items: center; }
@@ -15,8 +17,8 @@
   width: 42px;
   height: 30px;
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 4px;
+  border: 1px solid var(--line);
+  border-radius: 0;
   background: var(--panel2);
   cursor: pointer;
   flex-shrink: 0;
@@ -36,7 +38,7 @@ label.slider .mono { min-width: 34px; text-align: right; }
   width: 20px;
   height: 20px;
   padding: 0;
-  border-radius: 3px;
+  border-radius: 0;
   /* Checkerboard shows through partly transparent swatches. */
   background-image:
     linear-gradient(45deg, #2a3038 25%, transparent 25%, transparent 75%, #2a3038 75%),
@@ -44,31 +46,49 @@ label.slider .mono { min-width: 34px; text-align: right; }
   background-size: 8px 8px;
   background-position: 0 0, 4px 4px;
 }
-.palette button span { display: block; width: 100%; height: 100%; border-radius: 2px; }
+.palette button span { display: block; width: 100%; height: 100%; border-radius: 0; }
 .palette:empty::after { content: "colors you use land here"; color: var(--muted); font-size: 11px; font-style: italic; }
+.alpha-warning { display: none; color: var(--warn); }
 
 /* centre column: the net above the 3D head */
-#center-panel { gap: 6px; justify-content: flex-start; padding: 14px 8px; }
-.net-wrap, .preview-wrap { max-width: 100%; }
+#center-panel { gap: 5px; justify-content: flex-start; min-height: 0; overflow: hidden; padding: 10px 8px; }
+.net-wrap {
+  flex: 1 1 auto; min-height: 220px; max-width: 100%; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+.preview-wrap {
+  flex: 0 0 170px; height: 170px; max-width: 100%;
+  display: flex; align-items: center; justify-content: center;
+}
 #net {
-  max-width: 100%;
+  width: auto; height: auto; max-width: 100%; max-height: 100%;
   image-rendering: pixelated;
   cursor: crosshair;
   touch-action: none;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: 0;
   background: var(--panel);
 }
-#preview { max-width: 100%; cursor: grab; touch-action: none; }
+#preview { width: auto; height: 100%; max-width: 100%; cursor: grab; touch-action: none; }
 #preview:active { cursor: grabbing; }
 #net-readout { font-family: Consolas, monospace; min-height: 1.2em; }
+.canvas-help { white-space: nowrap; }
 
 /* right column: value in / out */
+.head-value-tabs {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 3px; padding: 8px 11px 0; margin: 0;
+}
+.head-value-tabs button { min-width: 0; padding-inline: 5px; }
+.generate-result hr {
+  border: 0; border-top: 1px solid var(--line); margin: 14px 0 12px;
+}
+.result-field { margin-top: 10px; }
 textarea {
   background: var(--panel2);
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   color: var(--text);
-  border-radius: 4px;
+  border-radius: 0;
   padding: 6px 7px;
   font-family: Consolas, monospace;
   font-size: 11px;
@@ -85,13 +105,18 @@ input[readonly] { color: var(--muted); }
 .btn-row button { flex: 1; }
 button.primary { border-color: var(--accent); color: var(--accent); }
 button:disabled { opacity: 0.5; cursor: default; }
-button:disabled:hover { border-color: var(--border); color: var(--text); }
+button:disabled:hover { border-color: var(--line); color: var(--text); }
 
 /* status line states */
-#status.working { color: var(--accent2); }
+#status.working { color: var(--accent); }
 #status.ok { color: var(--accent); }
 #status.bad { color: var(--danger); }
 
 @media (max-width: 1100px) {
   #center-panel { padding: 10px 4px; }
+}
+
+@media (max-width: 900px) {
+  #center-panel { min-height: 620px; }
+  .preview-wrap { flex-basis: 190px; height: 190px; }
 }

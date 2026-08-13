@@ -42,8 +42,8 @@
   }
   let anchor = state.view.selEls[0] || 0;   // range anchor for shift+click
 
-  const stageNow = () =>
-    state.crop.stages[clamp(state.view.stage, 0, state.crop.stages.length - 1)];
+  const stageNow = () => state.crop
+    ? state.crop.stages[clamp(state.view.stage, 0, state.crop.stages.length - 1)] : null;
   const elsNow = () => (stageNow() && stageNow().elements) || [];
 
   /** Indices that are both selected and still in range, always sorted. */
@@ -63,28 +63,39 @@
     TOOLS.map((t) =>
       `<button type="button" data-tool="${t}" title="${
         t === "orbit" ? "Drag to orbit the camera" : "Drag an axis handle to " + t
-      }">${t}</button>`
+      }">${UI.icon(t, "sm")}${t}</button>`
     ).join("") +
     `   </div>
-       <label class="gizmo-snap" title="Snap to the vanilla pixel grid (1/16), 0.05 scale, 5&deg;">
+       <label class="gizmo-snap check" title="Snap to the vanilla pixel grid (1/16), 0.05 scale, 5&deg;">
          <input type="checkbox" id="gizmo-snap" checked><span>snap</span>
        </label>
-       <span id="gizmo-readout" aria-live="polite"></span>
+       <label class="check"><input type="checkbox" id="show-hitbox" ${state.view.showHitbox !== false ? "checked" : ""}> hitbox</label>
+       <label class="check"><input type="checkbox" id="show-field" ${state.view.field ? "checked" : ""}> 5&times;5 field</label>
      </div>
      <div class="gizmo-row gizmo-els-row">
        <span class="gizmo-label">elements</span>
        <div id="gizmo-els" class="gizmo-els"></div>
-       <span class="gizmo-hint">shift = range &middot; ctrl = toggle</span>
      </div>`;
-  // Live in the existing viewport control strip under the canvas, alongside
-  // the stage/grow bars, rather than floating above it as a separate slab.
-  const controls = document.getElementById("view-controls");
-  if (controls) controls.insertBefore(bar, controls.firstChild);
+  // The preview owns the gizmos. Keeping them in its top-left corner leaves
+  // the weighted growth controls as one uninterrupted strip below the scene.
+  const previewPanel = document.getElementById("center-panel");
+  if (previewPanel) previewPanel.appendChild(bar);
   else canvas.parentNode.insertBefore(bar, canvas.nextSibling);
 
   const q = (s) => bar.querySelector(s);
   const elsBox = q("#gizmo-els");
-  const readout = (t) => { q("#gizmo-readout").textContent = t || ""; };
+  // Exact transform values already live in the stage form. The canvas keeps
+  // the spatial controls compact instead of echoing those values here.
+  const readout = () => {};
+
+  q("#show-hitbox").addEventListener("change", (e) => {
+    state.view.showHitbox = e.target.checked;
+    draw(); save();
+  });
+  q("#show-field").addEventListener("change", (e) => {
+    state.view.field = e.target.checked;
+    syncBar(); draw(); save();
+  });
 
   function syncBar() {
     bar.querySelectorAll("[data-tool]").forEach((b) =>
@@ -101,6 +112,7 @@
         }).join("")
       : `<span class="gizmo-empty">no elements in this stage</span>`;
     bar.classList.toggle("orbit-mode", state.view.tool === "orbit");
+    bar.classList.toggle("field-mode", !!state.view.field);
   }
 
   bar.addEventListener("click", (e) => {
@@ -186,6 +198,7 @@
   const baseDraw = draw;
   draw = function () {
     baseDraw.apply(this, arguments);
+    if (state.view.mode !== "stages") return;
     const o = originOf();
     if (!o) return;
     const els = selElements();
@@ -259,6 +272,7 @@
   }
 
   canvas.addEventListener("pointerdown", (e) => {
+    if (state.view.mode !== "stages") return;
     if (state.view.tool === "orbit") return;
     const o = originOf();
     if (!o) return;

@@ -243,6 +243,24 @@ function importYaml(text, fileName) {
 }
 
 function cur() { return state.items[state.current]; }
+
+const CONSUMABLE_SECTION_TITLES = [
+  "Identity", "Food (edible)", "Perishable (spoils over time)", "Toxic to carry",
+  "Preparation process", "Ingredients", "Addiction", "Effects", "Crafting effects",
+];
+
+function renderDisabledFormNav() {
+  const nav = $("form-nav");
+  nav.innerHTML = "";
+  CONSUMABLE_SECTION_TITLES.forEach((title, i) => {
+    const button = document.createElement("button");
+    button.className = "row-nav";
+    button.dataset.paneTarget = `s${i}`;
+    button.textContent = title;
+    button.disabled = true;
+    nav.appendChild(button);
+  });
+}
 function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
 function num(v, f) { const n = parseFloat(v); return isNaN(n) ? f : n; }
 function esc(s) {
@@ -265,24 +283,27 @@ function buildPanels() {
   const tabs = $("item-tabs");
   tabs.innerHTML = "";
   state.items.forEach((it, i) => {
+    const row = document.createElement("div");
+    row.className = "entity-nav-row";
     const b = document.createElement("button");
     b.textContent = it.id || `item ${i + 1}`;
     b.className = i === state.current ? "active" : "";
     b.onclick = () => { state.current = i; changed(true); };
-    tabs.appendChild(b);
-  });
-  if (state.items.length > 1) {
+    row.appendChild(b);
     const del = document.createElement("button");
-    del.textContent = "✕";
+    del.textContent = "\u2715";
     del.className = "danger";
-    del.title = "Delete current consumable";
+    del.title = `Delete ${it.id || `item ${i + 1}`}`;
+    del.setAttribute("aria-label", del.title);
     del.onclick = () => {
-      state.items.splice(state.current, 1);
-      state.current = clamp(state.current, 0, state.items.length - 1);
+      state.items.splice(i, 1);
+      if (i < state.current) state.current--;
+      else if (i === state.current) state.current = clamp(i, 0, state.items.length - 1);
       changed(true);
     };
-    tabs.appendChild(del);
-  }
+    row.appendChild(del);
+    tabs.appendChild(row);
+  });
   buildForm();
 }
 
@@ -292,9 +313,10 @@ function buildForm() {
   root.innerHTML = "";
 
   if (!it) {
-    root.innerHTML = `<p class="hint" style="padding:20px 4px">No consumables yet.
-      Upload an existing config to edit it, or press "+ consumable"
-      to start a new one.</p>`;
+    renderDisabledFormNav();
+    $("pane-title").textContent = "Consumables";
+    root.innerHTML = `<div class="empty-state"><strong>Start with a consumable</strong>
+      Add one from the outline, or upload an existing consumables YAML.</div>`;
     return;
   }
 
@@ -311,8 +333,9 @@ function buildForm() {
     </div>
     <label>Head texture (skin URL or base64; overrides item model)
       <input type="text" data-f="headTexture" value="${esc(it.headTexture || "")}" spellcheck="false"></label>
-    <label>Output amount (number or per_unit)
+    <label>Output amount
       <input type="text" data-f="outputAmount" value="${esc(it.outputAmount)}" spellcheck="false"></label>
+    <p class="foot-note plain">a number, or <code>per_unit</code></p>
     <label>Vanilla output item (optional; the craft yields this vanilla item instead, e.g. BREAD)
       <input type="text" data-f="outputItem" value="${esc(it.outputItem || "")}" spellcheck="false" placeholder="(leave blank for a custom item)" data-keys="items"></label>
     <label>Insanity multiplier <input type="number" data-f="insanity" min="0" step="0.1" value="${it.insanity}"></label>
@@ -331,12 +354,12 @@ function buildForm() {
 
   root.appendChild(toggleSection("Food (edible)", it.food, "enabled", `
     <div class="row">
-      <label>nutrition <input type="number" data-f="nutrition" min="0" value="${it.food.nutrition}"></label>
-      <label>saturation <input type="number" data-f="saturation" min="0" step="0.1" value="${it.food.saturation}"></label>
-      <label>seconds <input type="number" data-f="seconds" min="0.1" step="0.1" value="${it.food.seconds}"></label>
+      <label>Nutrition <input type="number" data-f="nutrition" min="0" value="${it.food.nutrition}"></label>
+      <label>Saturation <input type="number" data-f="saturation" min="0" step="0.1" value="${it.food.saturation}"></label>
+      <label>Use time (seconds) <input type="number" data-f="seconds" min="0.1" step="0.1" value="${it.food.seconds}"></label>
     </div>
     <div class="row">
-      <label>animation <select data-f="animation">
+      <label>Animation <select data-f="animation">
         <option value="eat" ${it.food.animation === "eat" ? "selected" : ""}>eat</option>
         <option value="drink" ${it.food.animation === "drink" ? "selected" : ""}>drink</option>
       </select></label>
@@ -352,7 +375,7 @@ function buildForm() {
   }));
 
   root.appendChild(toggleSection("Perishable (spoils over time)", it.perishable, "enabled", `
-    <label>lifetime minutes <input type="number" data-f="lifetimeMinutes" min="0.1" step="1" value="${it.perishable.lifetimeMinutes}"></label>
+    <label>Lifetime (minutes) <input type="number" data-f="lifetimeMinutes" min="0.1" step="1" value="${it.perishable.lifetimeMinutes}"></label>
     <p class="hint">The item spoils after this time. Spoiled food has weaker effects and may cause nausea or poison.</p>
     <p class="hint">Useful values: 4320 for 3 days, 10080 for 1 week, 20160 for 2 weeks, and 43200 for 1 month.</p>
   `, (f, t) => {
@@ -361,7 +384,7 @@ function buildForm() {
 
   // toxic
   const toxic = toggleSection("Toxic to carry", it.toxic, "enabled", `
-    <label>grace seconds <input type="number" data-f="grace" min="0" value="${it.toxic.grace}"></label>
+    <label>Grace period (seconds) <input type="number" data-f="grace" min="0" value="${it.toxic.grace}"></label>
     <div data-sub="toxic-effects"></div>
     <button class="add" data-add-toxic-effect>+ toxic effect</button>
   `, (f, t) => { if (f === "grace") it.toxic.grace = Math.max(0, num(t.value, 10)); });
@@ -376,7 +399,7 @@ function buildForm() {
           `<option ${eff.type === e ? "selected" : ""}>${e}</option>`).join("")}</select></label>
         <label>duration (ticks) <input type="number" data-f="duration" min="1" value="${eff.duration}"></label>
         <label>amplifier <input type="number" data-f="amplifier" min="0" value="${eff.amplifier}"></label>
-        <button class="danger" data-del style="align-self:flex-end">✕</button>`;
+        <button class="danger row-delete" data-del>✕</button>`;
       row.addEventListener("input", (e) => {
         const f = e.target.dataset.f;
         if (f === "type") eff.type = e.target.value;
@@ -407,7 +430,7 @@ function buildForm() {
     duration_seconds: temperature &amp; distill game length, ferment peak time, smelt cook time.
     Smelting has no minigame. It keeps the source quality. Use duration_seconds for its cook time.</p>
     <div data-smelt-only>
-      <p class="hint" style="margin:6px 0 2px">Allowed heat sources <span style="opacity:.7">Cannot use both a blast furnace and a smoker/campfire.</span></p>
+      <p class="hint">Allowed heat sources <span class="inline-note">Cannot use both a blast furnace and a smoker/campfire.</span></p>
       <div class="row">
         <label class="check"><input type="checkbox" data-ft="furnace"       ${it.process.furnaceTypes?.furnace       !== false ? "checked" : ""}> furnace</label>
         <label class="check"><input type="checkbox" data-ft="smoker"        ${it.process.furnaceTypes?.smoker        !== false ? "checked" : ""}> smoker</label>
@@ -538,23 +561,24 @@ function buildForm() {
   const add = it.addiction;
   root.appendChild(toggleSection("Addiction", add, "enabled", `
     <div class="row">
-      <label>max_level <input type="number" data-f="maxLevel" min="0" step="0.1" value="${add.maxLevel}"></label>
-      <label>decay_per_tick <input type="number" data-f="decayPerTick" min="0" step="0.0001" value="${add.decayPerTick}"></label>
-      <label>effect_severity <input type="number" data-f="effectSeverity" min="0" step="0.1" value="${add.effectSeverity}"></label>
+      <label>Maximum level <input type="number" data-f="maxLevel" min="0" step="0.1" value="${add.maxLevel}"></label>
+      <label>Decay per tick <input type="number" data-f="decayPerTick" min="0" step="0.0001" value="${add.decayPerTick}"></label>
+      <label>Effect severity <input type="number" data-f="effectSeverity" min="0" step="0.1" value="${add.effectSeverity}"></label>
     </div>
     <div class="row">
-      <label>window_ticks <input type="number" data-f="windowTicks" min="0" value="${add.windowTicks}"></label>
-      <label>damage_threshold_ticks <input type="number" data-f="damageThresholdTicks" min="0" value="${add.damageThresholdTicks}"></label>
+      <label>Window (ticks) <input type="number" data-f="windowTicks" min="0" value="${add.windowTicks}"></label>
+      <label>Damage threshold (ticks) <input type="number" data-f="damageThresholdTicks" min="0" value="${add.damageThresholdTicks}"></label>
     </div>
     <div class="row">
-      <label>damage_per_interval <input type="number" data-f="damagePerInterval" min="0" step="0.1" value="${add.damagePerInterval}"></label>
-      <label>withdrawal_check_interval <input type="number" data-f="withdrawalCheckIntervalTicks" min="1" value="${add.withdrawalCheckIntervalTicks}"></label>
+      <label>Damage per interval <input type="number" data-f="damagePerInterval" min="0" step="0.1" value="${add.damagePerInterval}"></label>
+      <label>Withdrawal check interval <input type="number" data-f="withdrawalCheckIntervalTicks" min="1" value="${add.withdrawalCheckIntervalTicks}"></label>
     </div>
     <div class="row">
-      <label>overdose_threshold (0 = can't OD) <input type="number" data-f="overdoseThreshold" min="0" step="0.1" value="${add.overdoseThreshold}"></label>
-      <label>overdose_duration_ticks <input type="number" data-f="overdoseDurationTicks" min="0" value="${add.overdoseDurationTicks}"></label>
+      <label>Overdose threshold <input type="number" data-f="overdoseThreshold" min="0" step="0.1" value="${add.overdoseThreshold}"></label>
+      <label>Overdose duration (ticks) <input type="number" data-f="overdoseDurationTicks" min="0" value="${add.overdoseDurationTicks}"></label>
     </div>
-    <label>antidote (material or consumable id) <input type="text" data-f="antidote" value="${esc(add.antidote)}" spellcheck="false"></label>
+    <p class="foot-note plain">0 threshold disables overdosing</p>
+    <label>Antidote (material or consumable id) <input type="text" data-f="antidote" value="${esc(add.antidote)}" spellcheck="false"></label>
   `, (f, t) => {
     if (f === "antidote") add.antidote = t.value.trim();
     else add[f] = Math.max(0, num(t.value, 0));
@@ -562,7 +586,7 @@ function buildForm() {
 
   // Sounds/particles fired on consume / right-click (use) / left-click (punch).
   const evWrap = document.createElement("div");
-  evWrap.className = "subsection";
+  evWrap.className = "pane-section";
   evWrap.innerHTML = `<div class="sub-head"><strong>Effects</strong><span class="grow"></span></div>
     <p class="hint">Cosmetic sounds/particles. <code>on_consume</code> fires when eaten,
     <code>on_use</code> on right-click, <code>on_punch</code> on left-click.</p>
@@ -575,11 +599,11 @@ function buildForm() {
   // Crafting effects: one general effect, or a set per quality tier. A poor or
   // ruined batch still smokes by default unless overridden here.
   const craftWrap = document.createElement("div");
-  craftWrap.className = "subsection";
+  craftWrap.className = "pane-section";
   craftWrap.innerHTML = `
     <div class="sub-head"><strong>Crafting effects</strong><span class="grow"></span></div>
     <p class="hint">Played when the item is crafted. Poor/ruined batches smoke by default.</p>
-    <div class="row" style="margin-bottom:6px">
+    <div class="row compact-bottom">
       <label class="check"><input type="radio" name="craftmode-${it.id}" value="general" ${it.events.craftMode !== "tiers" ? "checked" : ""}> one effect</label>
       <label class="check"><input type="radio" name="craftmode-${it.id}" value="tiers" ${it.events.craftMode === "tiers" ? "checked" : ""}> per quality tier</label>
     </div>
@@ -595,6 +619,45 @@ function buildForm() {
     }));
 
   paintModelChip();
+  paneify();
+}
+
+/** Selected outline pane, kept across rebuilds of the form. */
+let openPane = "s0";
+document.addEventListener("ui:pane", (e) => { openPane = e.detail.pane; });
+
+/**
+ * Turns the sections this form just built into outline panes: one section is
+ * shown at a time and the outline lists them by their own heading, so a
+ * consumable with nine sections is nine short pages instead of one long one.
+ */
+function paneify() {
+  const root = $("form-root");
+  const nav = $("form-nav");
+  nav.innerHTML = "";
+  [...root.children].forEach((el, i) => {
+    const head = el.querySelector(".sub-head strong");
+    const title = head ? head.textContent : `Section ${i + 1}`;
+    const key = "s" + i;
+    el.dataset.pane = key;
+    el.hidden = true;
+    const b = document.createElement("button");
+    b.className = "row-nav";
+    b.dataset.paneTarget = key;
+    b.dataset.paneTitle = title;
+    b.textContent = title;
+    nav.appendChild(b);
+    // The fixed panel header already names the page. Plain section headings
+    // are redundant here; toggle pages keep the control but call it Enabled.
+    const subHead = el.querySelector(":scope > .sub-head");
+    if (subHead) {
+      if (el.querySelector("[data-toggle]")) head.textContent = "Enabled";
+      else subHead.hidden = true;
+    }
+  });
+  const want = root.querySelector(`[data-pane="${openPane}"]`) ? openPane : "s0";
+  UI.selectPane(want);
+  UI.refresh();
 }
 
 /** Render the crafting-effect editor for the item's current mode. */
@@ -607,10 +670,10 @@ function renderCraft(root, ev) {
   }
 }
 
-/** Plain section card with a delegated input handler. */
+/** Plain top-level pane with a delegated input handler. */
 function section(title, innerHTML, onInput) {
   const div = document.createElement("div");
-  div.className = "subsection";
+  div.className = "pane-section";
   div.innerHTML = `<div class="sub-head"><strong>${title}</strong><span class="grow"></span></div>
     <div class="form-grid">${innerHTML}</div>`;
   div.addEventListener("input", (e) => {
@@ -625,13 +688,13 @@ function section(title, innerHTML, onInput) {
 /** Section with an enable checkbox that collapses its body. */
 function toggleSection(title, obj, key, innerHTML, onInput) {
   const div = document.createElement("div");
-  div.className = "subsection";
+  div.className = "pane-section";
   div.innerHTML = `
     <div class="sub-head">
       <label class="check"><input type="checkbox" data-toggle ${obj[key] ? "checked" : ""}> <strong>${title}</strong></label>
       <span class="grow"></span>
     </div>
-    <div class="form-grid" style="${obj[key] ? "" : "display:none"}">${innerHTML}</div>`;
+    <div class="form-grid" ${obj[key] ? "" : "hidden"}>${innerHTML}</div>`;
   div.querySelector("[data-toggle]").addEventListener("input", (e) => {
     obj[key] = e.target.checked;
     changed(true);
@@ -691,16 +754,16 @@ function ingredientCard(it, rule, i) {
       <div class="row">
         <label>effect <select data-e="type">${EFFECT_TYPES.map(t =>
           `<option ${eff.type === t ? "selected" : ""}>${t}</option>`).join("")}</select></label>
-        <button class="danger" data-del-eff style="align-self:flex-end">✕</button>
+        <button class="danger row-delete" data-del-eff>✕</button>
       </div>
       <div class="row">
-        <label>base_duration <input type="number" data-e="base_duration" min="0" value="${eff.base_duration}"></label>
-        <label>duration_per_unit <input type="number" data-e="duration_per_unit" min="0" value="${eff.duration_per_unit}"></label>
+        <label>Base duration <input type="number" data-e="base_duration" min="0" value="${eff.base_duration}"></label>
+        <label>Duration per unit <input type="number" data-e="duration_per_unit" min="0" value="${eff.duration_per_unit}"></label>
       </div>
       <div class="row">
-        <label>base_amplifier <input type="number" data-e="base_amplifier" min="0" value="${eff.base_amplifier}"></label>
-        <label>amp_per_unit <input type="number" data-e="amplifier_per_unit" min="0" step="0.1" value="${eff.amplifier_per_unit}"></label>
-        <label>amp_cap <input type="number" data-e="amplifier_cap" min="0" value="${eff.amplifier_cap}"></label>
+        <label>Base amplifier <input type="number" data-e="base_amplifier" min="0" value="${eff.base_amplifier}"></label>
+        <label>Amplifier per unit <input type="number" data-e="amplifier_per_unit" min="0" step="0.1" value="${eff.amplifier_per_unit}"></label>
+        <label>Amplifier cap <input type="number" data-e="amplifier_cap" min="0" value="${eff.amplifier_cap}"></label>
       </div>`;
     sub.addEventListener("input", (e) => {
       const f = e.target.dataset.e;
@@ -717,6 +780,99 @@ function ingredientCard(it, rule, i) {
 
 // ── preview ────────────────────────────────────────────────────────────────
 
+function isBlockModel(model) {
+  const key = MCAssets.clean(model).toUpperCase();
+  return MCKeys.BLOCKS.includes(key);
+}
+
+function fillPoly(ctx, points, fill) {
+  ctx.beginPath();
+  ctx.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+}
+
+/** Draw one texture into an affine parallelogram p0 -> p1 -> p2 -> p3. */
+function drawIsoFace(ctx, tex, points, fallback, shade) {
+  fillPoly(ctx, points, fallback);
+  if (tex) {
+    const [p0, p1, , p3] = points;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(p0[0], p0[1]);
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+    ctx.closePath();
+    ctx.clip();
+    ctx.setTransform(
+      (p1[0] - p0[0]) / tex.width, (p1[1] - p0[1]) / tex.width,
+      (p3[0] - p0[0]) / tex.height, (p3[1] - p0[1]) / tex.height,
+      p0[0], p0[1]
+    );
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(tex, 0, 0);
+    ctx.restore();
+  }
+  if (shade) fillPoly(ctx, points, shade);
+}
+
+function drawIsoCube(canvas, faces, fallback) {
+  canvas.width = 96; canvas.height = 96;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, 96, 96);
+  const top = [[48, 7], [85, 28], [48, 49], [11, 28]];
+  const left = [[11, 28], [48, 49], [48, 89], [11, 68]];
+  const right = [[48, 49], [85, 28], [85, 68], [48, 89]];
+  drawIsoFace(ctx, faces.top, top, fallback, "rgba(255,255,255,.08)");
+  drawIsoFace(ctx, faces.left, left, fallback, "rgba(0,0,0,.16)");
+  drawIsoFace(ctx, faces.right, right, fallback, "rgba(0,0,0,.30)");
+}
+
+function drawIsoPlant(canvas, texture, fallback) {
+  canvas.width = 96; canvas.height = 96;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, 96, 96);
+  const a = [[20, 4], [76, 32], [76, 88], [20, 60]];
+  const b = [[20, 32], [76, 4], [76, 60], [20, 88]];
+  drawIsoFace(ctx, texture, a, fallback, "rgba(0,0,0,.07)");
+  drawIsoFace(ctx, texture, b, fallback, "rgba(0,0,0,.16)");
+}
+
+function paintPreviewModel(canvas, it) {
+  const headTexture = (it.headTexture || "").trim();
+  const fallback = MCAssets.colorFor(it.model);
+  if (headTexture) {
+    const cube = MCAssets.headCube(headTexture);
+    drawIsoCube(canvas, {
+      top: cube?.top,
+      left: cube?.front,
+      right: cube?.right,
+    }, fallback);
+    return;
+  }
+  if (isBlockModel(it.model)) {
+    const crop = MCAssets.cropState(it.model);
+    if (crop) {
+      drawIsoPlant(canvas, MCAssets.blockSprite(it.model), fallback);
+      return;
+    }
+    drawIsoCube(canvas, {
+      top: MCAssets.block(it.model, "top"),
+      left: MCAssets.block(it.model, "side"),
+      right: MCAssets.block(it.model, "side"),
+    }, fallback);
+    return;
+  }
+  canvas.width = 16; canvas.height = 16;
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, 16, 16);
+  const tex = MCAssets.item(it.model);
+  if (tex) ctx.drawImage(tex, 0, 0, 16, 16);
+  else { ctx.fillStyle = fallback; ctx.fillRect(3, 3, 10, 10); }
+}
+
 function paintModelChip() {
   const chip = $("model-chip");
   if (!chip || !cur()) return;
@@ -732,40 +888,40 @@ function paintModelChip() {
 function renderPreview() {
   const it = cur();
   const root = $("tooltip-preview");
-  if (!it) { root.innerHTML = `<div class="t-desc">No consumable selected.</div>`; return; }
+  root.classList.toggle("is-empty", !it);
+  if (!it) {
+    root.innerHTML = `<div class="empty-state"><strong>No consumable selected</strong>
+      Add or upload a consumable to see its in-game item tooltip.</div>`;
+    return;
+  }
   const lines = [];
   if (it.description.trim()) lines.push(`<div class="t-desc">${LegacyText.toHtml(it.description, esc)}</div>`);
   if (it.food.enabled) {
-    lines.push(`<div class="t-line">🍗 ${it.food.nutrition} nutrition · ${it.food.seconds}s ${it.food.animation}</div>`);
+    lines.push(`<div class="t-line">Food · ${it.food.nutrition} nutrition · ${it.food.seconds}s ${it.food.animation}</div>`);
   }
   if (it.perishable.enabled) {
-    lines.push(`<div class="t-gold">⌛ perishable, spoils in ${it.perishable.lifetimeMinutes}m</div>`);
+    lines.push(`<div class="t-gold">Perishable · spoils in ${it.perishable.lifetimeMinutes}m</div>`);
   }
   if (it.toxic.enabled) {
-    lines.push(`<div class="t-warn">☠ Toxic after ${it.toxic.grace}s. `
+    lines.push(`<div class="t-warn">Toxic after ${it.toxic.grace}s · `
       + it.toxic.effects.map(e => e.type).join(", ") + `</div>`);
   }
   if (it.process.enabled) {
     const procLabel = NON_MINIGAME_TYPES.has(it.process.type)
-      ? `⚒ ${it.process.type} (auto)`
-      : `⚒ ${it.process.type} (difficulty ${it.process.difficulty})`;
+      ? `Process · ${it.process.type} (automatic)`
+      : `Process · ${it.process.type} · difficulty ${it.process.difficulty}`;
     lines.push(`<div class="t-gold">${procLabel}</div>`);
   }
   if (it.addiction.enabled) {
-    lines.push(`<div class="t-warn">⚠ addictive${it.addiction.overdoseThreshold > 0 ? " · can overdose" : ""}</div>`);
+    lines.push(`<div class="t-warn">Addictive${it.addiction.overdoseThreshold > 0 ? " · can overdose" : ""}</div>`);
   }
   const ingredients = it.ingredients
     .map(r => `${r.maxUnits}× ${r.value}`).join(", ");
-  if (ingredients) lines.push(`<div class="t-line" style="color:#8a94a1">from: ${esc(ingredients)}</div>`);
+  if (ingredients) lines.push(`<div class="t-source">From: ${esc(ingredients)}</div>`);
 
   root.innerHTML = `<canvas class="big-tex" width="16" height="16"></canvas>
     <div class="t-name">${LegacyText.toHtml(it.name || prettify(it.id), esc)}</div>${lines.join("")}`;
-  const big = root.querySelector(".big-tex").getContext("2d");
-  big.imageSmoothingEnabled = false;
-  const tex = (it.headTexture || "").trim()
-    ? MCAssets.headFace(it.headTexture) : MCAssets.item(it.model);
-  if (tex) big.drawImage(tex, 0, 0, 16, 16);
-  else { big.fillStyle = MCAssets.colorFor(it.model); big.fillRect(3, 3, 10, 10); }
+  paintPreviewModel(root.querySelector(".big-tex"), it);
 }
 
 MCAssets.onReady(() => { paintModelChip(); renderPreview(); });

@@ -13,8 +13,8 @@
 "use strict";
 
 (function () {
-  // A handful of common values, surfaced as datalist suggestions. The inputs
-  // stay free-text - any valid Bukkit Sound/Particle enum name works.
+  // A handful of common values, surfaced first in the shared key picker. The
+  // inputs stay free-text - any valid Bukkit Sound/Particle enum name works.
   const COMMON_SOUNDS = [
     "BLOCK_CROP_BREAK", "ITEM_CROP_PLANT", "BLOCK_SWEET_BERRY_BUSH_PICK_BERRIES",
     "BLOCK_GRASS_BREAK", "BLOCK_WET_GRASS_BREAK", "ENTITY_GENERIC_EAT",
@@ -467,19 +467,6 @@
     return [`${indent}events:`, ...triggerLines(events, triggers, indent + "  ")];
   }
 
-  function datalists() {
-    if (document.getElementById("ev-sounds")) return;
-    const mk = (id, vals) => {
-      const dl = document.createElement("datalist");
-      dl.id = id;
-      dl.innerHTML = vals.map(v => `<option value="${v}">`).join("");
-      document.body.appendChild(dl);
-    };
-    const merge = (common, all) => [...common, ...all.filter(v => !common.includes(v))];
-    mk("ev-sounds", merge(COMMON_SOUNDS, SOUNDS));
-    mk("ev-particles", merge(COMMON_PARTICLES, PARTICLES));
-  }
-
   function labelFor(trigger) {
     return ({
       on_consume: "On consume (eaten/drunk)",
@@ -497,7 +484,6 @@
    * trigger keys. `onChange` fires after any edit. Rebuilds in place.
    */
   function render(root, events, triggers, onChange) {
-    datalists();
     root.innerHTML = "";
     root.classList.add("events-editor");
     for (const trigger of triggers) {
@@ -534,8 +520,8 @@
         <button class="danger" data-del>✕</button>
       </div>
       <div class="form-grid">
-        <label>sound <input type="text" list="ev-sounds" data-f="sound" value="${esc(eff.sound)}" placeholder="e.g. BLOCK_CROP_BREAK" spellcheck="false"></label>
-        <label>particle <input type="text" list="ev-particles" data-f="particle" value="${esc(eff.particle)}" placeholder="e.g. HAPPY_VILLAGER" spellcheck="false"></label>
+        <label>sound <input type="text" data-keys="sounds" data-f="sound" value="${esc(eff.sound)}" placeholder="e.g. BLOCK_CROP_BREAK" spellcheck="false"></label>
+        <label>particle <input type="text" data-keys="particles" data-f="particle" value="${esc(eff.particle)}" placeholder="e.g. HAPPY_VILLAGER" spellcheck="false"></label>
         <div class="row">
           <label>volume <input type="number" step="0.1" min="0" data-f="volume" value="${eff.volume}"></label>
           <label>pitch <input type="number" step="0.1" min="0" data-f="pitch" value="${eff.pitch}"></label>
@@ -556,7 +542,10 @@
     return card;
   }
 
+  const preferred = (common, all) => [...common, ...all.filter(v => !common.includes(v))];
   window.EventsEditor = {
     defaults, fromYaml, toYamlLines, triggerLines, hasAny, isReal, render, labelFor,
+    SOUNDS: preferred(COMMON_SOUNDS, SOUNDS),
+    PARTICLES: preferred(COMMON_PARTICLES, PARTICLES),
   };
 })();

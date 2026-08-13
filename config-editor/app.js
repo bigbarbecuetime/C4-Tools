@@ -2,7 +2,7 @@
  *
  * The whole file is held as one parsed JS object (state). Friendly forms edit
  * the commonly-tuned sections by mutating that object in place; any sections
- * the forms don't model (stations, tools, routing, quality.consumption, ...)
+ * the forms don't model (routing, quality.consumption, ...)
  * survive an upload untouched. Output is produced by YAMLLite.dump.
  */
 "use strict";
@@ -59,13 +59,21 @@ function sect(...path) {
   return o;
 }
 
+// This editor does not load consumable project files, so group-member
+// suggestions combine vanilla materials with group names from this config.
+// Custom consumable ids remain valid free text.
+globalThis.ConfigEditorCatalog = {
+  groupMemberKeys: () => [...new Set([...MCKeys.ITEMS, ...Object.keys(sect("consumable_groups"))])],
+  groupMemberTexture: key => MCAssets.item(String(key).replace(/^minecraft:/, "")),
+};
+
 // ── render ───────────────────────────────────────────────────────────────────
 
 function changed() { renderYAML(); save(); }
 
 const CONFIG_SECTION_LABELS = {
   debug: "General",
-  tools: "Devices",
+  tools: "Stations & tools",
   quality: "Quality",
   insanity: "Insanity",
   mcmmo: "mcMMO",
@@ -121,6 +129,8 @@ function bindForms() {
 
   setVal("ch-block", ch.block); setVal("ch-thickness", ch.thickness);
   setChk("ch-glow", ch.glow); setVal("ch-color", ch.glow_color);
+  $("ch-glow-options").hidden = ch.glow !== true;
+  drawHighlightPreview();
 
   setVal("ins-decay", ins.decay_per_check); setVal("ins-dose", ins.dose_factor);
   setVal("ins-craving", ins.craving_gain); setVal("ins-withdrawal", ins.withdrawal_gain);
@@ -131,32 +141,180 @@ function bindForms() {
   setVal("ruined-lore", ruined.lore);
 
   setVal("vf-default", vf.default_lifetime_minutes);
+  updateDefaultFoodDuration();
   setVal("vc-default", vc.default_outside_rate);
 
-  buildTierRows("quality-thresholds", "Thresholds", sect("quality", "thresholds"), 0, 1, 0.01);
-  buildTierRows("quality-multipliers", "Multipliers", sect("quality", "multipliers"), 0, 5, 0.05);
+  buildQualityEditor(sect("quality", "thresholds"), sect("quality", "multipliers"));
   buildStations();
+  buildToolLists();
   buildVanillaFoods();
-  buildGroups("biome-groups", sect("biome_groups"));
-  buildGroups("consumable-groups", sect("consumable_groups"));
+  buildGroups("biome-groups", sect("biome_groups"), "biomes");
+  buildGroups("consumable-groups", sect("consumable_groups"), "group-members");
   buildVanillaCrops();
   paintChips();
+  // repaint the shared controls (capped meters, '&'-code name field)
+  UI.refresh();
 }
 
-function buildTierRows(rootId, title, obj, min, max, step) {
-  const root = $(rootId);
-  root.innerHTML = `<div class="hitbox-row"><span class="muted">${title}</span></div>`;
-  const row = document.createElement("div");
-  row.className = "row";
-  QUALITY_TIERS.forEach(tier => {
-    const lab = document.createElement("label");
-    lab.innerHTML = `${tier} <input type="number" min="${min}" max="${max}" step="${step}" value="${obj[tier] ?? ""}">`;
-    lab.querySelector("input").addEventListener("input", (e) => {
-      obj[tier] = num(e.target.value, 0); changed();
-    });
-    row.appendChild(lab);
+function qualityPercent(v) {
+  return Number((clamp(num(v, 0), 0, 1) * 100).toFixed(3));
+}
+
+function qualityThresholdsValid(thresholds) {
+  const v = QUALITY_TIERS.map(tier => num(thresholds[tier], NaN));
+  return v.every(n => Number.isFinite(n) && n >= 0 && n <= 1)
+    && v.every((n, i) => i === 0 || v[i - 1] < n);
+}
+
+function qualityRangeText(start, end, perfect) {
+  const a = qualityPercent(start);
+  return perfect ? `${a}% to 100%` : `${a}% to under ${qualityPercent(end)}%`;
+}
+
+function refreshQualityMap(thresholds, multipliers) {
+  const root = $("quality-score-map");
+  const warning = $("quality-threshold-warning");
+  const valid = qualityThresholdsValid(thresholds);
+  warning.hidden = valid;
+  if (!valid) {
+    root.innerHTML = `<div class="quality-score-scale"><span>0%</span><span>Preparation score</span><span>100%</span></div>
+      <div class="quality-band invalid">Fix the tier start scores to restore the band preview.</div>`;
+    document.querySelectorAll("[data-quality-range]").forEach(el => { el.textContent = "Invalid score order"; });
+    return;
+  }
+
+  const starts = [0, ...QUALITY_TIERS.map(tier => num(thresholds[tier], 0))];
+  const names = ["Ruined", "Poor", "Decent", "Good", "Perfect"];
+  const keys = ["ruined", ...QUALITY_TIERS];
+  const segments = names.map((name, i) => {
+    const end = i === names.length - 1 ? 1 : starts[i + 1];
+    const width = Math.max(0, end - starts[i]) * 100;
+    const range = i === names.length - 1
+      ? qualityRangeText(starts[i], 1, true)
+      : qualityRangeText(starts[i], end, false);
+    const outcome = i === 0 ? "ruined batch item" : `${num(multipliers[keys[i]], 0)}× effect duration`;
+    return `<div class="quality-band-segment tier-${keys[i]}" style="flex-basis:${width}%" title="${name}: ${range}; ${outcome}">
+      <span class="long">${name}</span><span class="short">${name[0]}</span></div>`;
+  }).join("");
+  const ranges = names.map((name, i) => {
+    const end = i === names.length - 1 ? 1 : starts[i + 1];
+    return `<span class="tier-${keys[i]}">${name} · ${qualityRangeText(starts[i], end, i === names.length - 1)}</span>`;
+  }).join("");
+  const ariaRanges = names.map((name, i) => {
+    const end = i === names.length - 1 ? 1 : starts[i + 1];
+    return `${name} ${qualityRangeText(starts[i], end, i === names.length - 1)}`;
+  }).join(", ");
+  root.innerHTML = `<div class="quality-score-scale"><span>0%</span><span>Preparation score</span><span>100%</span></div>
+    <div class="quality-band" role="img" aria-label="Preparation score bands: ${ariaRanges}">${segments}</div>
+    <div class="quality-band-ranges">${ranges}</div>`;
+
+  QUALITY_TIERS.forEach((tier, i) => {
+    const next = i === QUALITY_TIERS.length - 1 ? 1 : thresholds[QUALITY_TIERS[i + 1]];
+    const range = document.querySelector(`[data-quality-range="${tier}"]`);
+    if (range) range.textContent = qualityRangeText(thresholds[tier], next, i === QUALITY_TIERS.length - 1);
   });
-  root.appendChild(row);
+}
+
+function buildQualityEditor(thresholds, multipliers) {
+  const root = $("quality-tier-settings");
+  root.className = "quality-tier-list";
+  root.innerHTML = "";
+  QUALITY_TIERS.forEach(tier => {
+    const name = tier[0].toUpperCase() + tier.slice(1);
+    const card = document.createElement("section");
+    card.className = `quality-tier-row tier-${tier}`;
+    card.innerHTML = `<div class="tier-summary"><strong class="tier-name">${name}</strong>
+      <span class="tier-range" data-quality-range="${tier}"></span></div>
+      <label>Starts at
+        <span class="input-with-unit"><input type="number" min="0" max="100" step="0.1"
+          data-quality-start="${tier}" value="${qualityPercent(thresholds[tier])}"><span class="input-unit">%</span></span>
+      </label>
+      <label>Effect duration
+        <span class="input-with-unit"><input type="number" min="0" step="0.05"
+          data-quality-multiplier="${tier}" value="${multipliers[tier] ?? ""}"><span class="input-unit">×</span></span>
+      </label>`;
+    card.querySelector("[data-quality-start]").addEventListener("input", e => {
+      const value = num(e.target.value, NaN);
+      if (!Number.isFinite(value)) return;
+      thresholds[tier] = Number((clamp(value, 0, 100) / 100).toFixed(3));
+      refreshQualityMap(thresholds, multipliers);
+      changed();
+    });
+    card.querySelector("[data-quality-multiplier]").addEventListener("input", e => {
+      const value = num(e.target.value, NaN);
+      if (!Number.isFinite(value)) return;
+      multipliers[tier] = Math.max(0, value);
+      refreshQualityMap(thresholds, multipliers);
+      changed();
+    });
+    root.appendChild(card);
+  });
+  refreshQualityMap(thresholds, multipliers);
+}
+
+function readableDuration(value) {
+  let remaining = Math.max(0, Math.round(num(value, 0)));
+  if (remaining === 0) return "Never spoils";
+  const units = [
+    [43200, "month"],
+    [10080, "week"],
+    [1440, "day"],
+    [60, "hour"],
+    [1, "minute"],
+  ];
+  const parts = [];
+  for (const [size, label] of units) {
+    const count = Math.floor(remaining / size);
+    if (!count) continue;
+    parts.push(`${count} ${label}${count === 1 ? "" : "s"}`);
+    remaining %= size;
+  }
+  return parts.join(" ");
+}
+
+function updateDefaultFoodDuration() {
+  const output = $("vf-default-readable");
+  if (output) output.textContent = readableDuration($("vf-default").value);
+}
+
+function vanillaFoodRow(items, key) {
+  let currentKey = key;
+  const row = document.createElement("div");
+  row.className = "row config-duration-row";
+  row.innerHTML = `
+    <input class="flex-input" type="text" data-k data-keys="items" value="${esc(key)}"
+      placeholder="MATERIAL" spellcheck="false" aria-label="Food material">
+    <label class="duration-cell">Lifetime
+      <span class="input-with-unit"><input type="number" data-v min="0" step="1"
+        value="${esc(items[key])}" aria-label="Lifetime in minutes"><span class="input-unit">min</span></span>
+      <output class="duration-readout">${readableDuration(items[key])}</output>
+    </label>
+    <button class="danger row-delete" data-del aria-label="Delete ${esc(key)} override">&times;</button>`;
+  const keyInput = row.querySelector("[data-k]");
+  const valueInput = row.querySelector("[data-v]");
+  const output = row.querySelector(".duration-readout");
+  keyInput.addEventListener("input", () => {
+    const nextKey = keyInput.value.trim();
+    if (!nextKey || nextKey === currentKey) return;
+    const minutes = items[currentKey];
+    delete items[currentKey];
+    items[nextKey] = minutes;
+    currentKey = nextKey;
+    row.querySelector("[data-del]").setAttribute("aria-label", `Delete ${nextKey} override`);
+    changed();
+  });
+  valueInput.addEventListener("input", () => {
+    const minutes = Math.max(0, Math.round(num(valueInput.value, 0)));
+    items[currentKey] = minutes;
+    output.textContent = readableDuration(minutes);
+    changed();
+  });
+  row.querySelector("[data-del]").onclick = () => {
+    delete items[currentKey];
+    buildVanillaFoods();
+    changed();
+  };
+  return row;
 }
 
 function buildVanillaFoods() {
@@ -164,24 +322,26 @@ function buildVanillaFoods() {
   const root = $("vf-items");
   root.innerHTML = "";
   for (const key of Object.keys(items)) {
-    root.appendChild(kvRow(key, items[key], "MATERIAL", "minutes", true,
-      (nk, nv) => { delete items[key]; if (nk) items[nk] = num(nv, 0); changed(); },
-      () => { delete items[key]; buildVanillaFoods(); changed(); }));
+    root.appendChild(vanillaFoodRow(items, key));
   }
 }
 
-function buildGroups(rootId, obj) {
+function buildGroups(rootId, obj, memberKeys) {
   const root = $(rootId);
   root.innerHTML = "";
   for (const name of Object.keys(obj)) {
     const members = Array.isArray(obj[name]) ? obj[name] : [];
-    root.appendChild(kvRow(name, members.join(", "), "group name", "members (comma separated)", false,
+    const row = kvRow(name, members.join(", "), "group name", "members (comma separated)", false,
       (nk, nv) => {
         delete obj[name];
         if (nk) obj[nk] = nv.split(",").map(s => s.trim()).filter(Boolean);
         changed();
       },
-      () => { delete obj[name]; buildGroups(rootId, obj); changed(); }));
+      () => { delete obj[name]; buildGroups(rootId, obj, memberKeys); changed(); });
+    const memberInput = row.querySelector("[data-v]");
+    memberInput.dataset.keys = memberKeys;
+    memberInput.dataset.multi = "";
+    root.appendChild(row);
   }
 }
 
@@ -190,17 +350,18 @@ function buildVanillaCrops() {
   const root = $("vanilla-crops");
   root.innerHTML = "";
   for (const name of Object.keys(crops)) {
+    let currentName = name;
     const c = crops[name] && typeof crops[name] === "object" ? crops[name] : {};
     const card = document.createElement("div");
     card.className = "card";
     card.innerHTML = `
       <div class="card-head">
-        <input type="text" data-f="id" value="${esc(name)}" spellcheck="false" style="flex:1" placeholder="WHEAT">
+        <input class="flex-input" type="text" data-f="id" data-keys="blocks" value="${esc(name)}" spellcheck="false" placeholder="WHEAT">
         <button class="danger" data-del>✕</button>
       </div>
       <div class="form-grid">
         <label>biomes (keys or group names, comma separated)
-          <input type="text" data-f="biomes" value="${esc((c.biomes || []).join(", "))}" spellcheck="false"></label>
+          <input type="text" data-f="biomes" data-keys="biomes" data-multi value="${esc((c.biomes || []).join(", "))}" spellcheck="false"></label>
         <label>outside rate (0-1)
           <input type="number" data-f="rate" min="0" max="1" step="0.05" value="${c.outside_rate ?? ""}"></label>
       </div>`;
@@ -208,225 +369,215 @@ function buildVanillaCrops() {
       const f = e.target.dataset.f;
       if (f === "id") {
         const nk = e.target.value.trim();
-        if (nk && nk !== name) { crops[nk] = crops[name]; delete crops[name]; changed(); }
+        if (nk && nk !== currentName) {
+          crops[nk] = crops[currentName];
+          delete crops[currentName];
+          currentName = nk;
+          changed();
+        }
         return;
       }
       if (f === "biomes") c.biomes = e.target.value.split(",").map(s => s.trim()).filter(Boolean);
       if (f === "rate") c.outside_rate = num(e.target.value, 0.5);
-      crops[name] = c;
+      crops[currentName] = c;
       changed();
     });
-    card.querySelector("[data-del]").onclick = () => { delete crops[name]; buildVanillaCrops(); changed(); };
+    card.querySelector("[data-del]").onclick = () => { delete crops[currentName]; buildVanillaCrops(); changed(); };
     root.appendChild(card);
   }
 }
 
 // ── stations ───────────────────────────────────────────────────────────────
-// Each station: id, display_name, texture, processes[], oven_top, block, and an
-// optional crafting recipe (shapeless list OR shaped pattern + key->material).
-// The whole `stations:` map round-trips through YAMLLite untouched except for
-// what these forms edit.
-
-const STATION_PROCESSES = [
-  "pound", "stir", "fry", "temperature", "distill", "ferment",
-  "cut", "sieve", "sequence", "smelt",
-];
-
-/** Normalise a parsed recipe section into {mode, shapeless[], pattern[], keys{}}. */
-function recipeModel(rec) {
-  const m = { mode: "none", shapeless: [], pattern: ["", "", ""], keys: {} };
-  if (!rec || typeof rec !== "object") return m;
-  if (rec.shaped && typeof rec.shaped === "object") {
-    m.mode = "shaped";
-    const p = Array.isArray(rec.shaped.pattern) ? rec.shaped.pattern.map(String) : [];
-    m.pattern = [p[0] || "", p[1] || "", p[2] || ""];
-    m.keys = (rec.shaped.keys && typeof rec.shaped.keys === "object") ? { ...rec.shaped.keys } : {};
-  } else if (Array.isArray(rec.shapeless)) {
-    m.mode = "shapeless";
-    m.shapeless = rec.shapeless.map(String);
-  }
-  return m;
-}
-
-/** Write a recipe model back onto a station object (or delete `recipe` when none). */
-function applyRecipe(station, m) {
-  if (m.mode === "shapeless") {
-    const list = m.shapeless.map(s => s.trim()).filter(Boolean);
-    if (list.length) { station.recipe = { shapeless: list }; return; }
-  } else if (m.mode === "shaped") {
-    const pattern = m.pattern.filter(r => r.length).map(r => r);
-    const keys = {};
-    for (const k of Object.keys(m.keys)) {
-      const mat = String(m.keys[k] || "").trim();
-      if (k && mat) keys[k] = mat;
-    }
-    if (pattern.length && Object.keys(keys).length) {
-      station.recipe = { shaped: { pattern, keys } };
-      return;
-    }
-  }
-  delete station.recipe;
-}
+// Only the two playable station identities are editable. All fixed mechanics
+// and unknown uploaded station definitions round-trip untouched.
 
 function buildStations() {
   const stations = sect("stations");
   const root = $("stations");
   root.innerHTML = "";
-  for (const id of Object.keys(stations)) {
-    const s = (stations[id] && typeof stations[id] === "object") ? stations[id] : (stations[id] = {});
-    root.appendChild(stationCard(stations, id, s));
+  const defaults = defaultConfig().stations || {};
+  for (const id of ["mortar_pestle", "cooktop"]) {
+    const configured = stations[id] && typeof stations[id] === "object";
+    const s = configured ? stations[id] : { ...(defaults[id] || {}) };
+    root.appendChild(stationIdentityCard(stations, id, s, configured));
   }
 }
 
-function stationCard(stations, id, s) {
-  const card = document.createElement("div");
-  card.className = "card";
-  const procs = Array.isArray(s.processes) ? s.processes.map(String) : [];
-  const rm = recipeModel(s.recipe);
+function buildToolLists() {
+  const tools = sect("tools");
+  const defaults = defaultConfig().tools || {};
+  const root = $("tool-lists");
+  root.innerHTML = "";
+  for (const [id, label] of [["cutting", "Cut tools"], ["sifter", "Sieve tools"]]) {
+    let configured = tools[id] && typeof tools[id] === "object";
+    const tool = configured ? tools[id] : {
+      ...(defaults[id] || {}),
+      materials: [...(defaults[id]?.materials || [])],
+    };
+    const card = document.createElement("section");
+    card.className = "card tool-list-card";
+    card.innerHTML = `
+      <div class="card-head">
+        <strong>${label}</strong>
+        <code>${id}</code>
+      </div>
+      <label>Allowed items
+        <input type="text" data-tool-materials data-keys="items" data-multi
+          spellcheck="false" value="${esc((tool.materials || []).join(", "))}">
+      </label>`;
+    card.querySelector("[data-tool-materials]").addEventListener("input", e => {
+      if (!configured) {
+        tools[id] = tool;
+        configured = true;
+      }
+      tool.materials = e.target.value.split(",").map(value => value.trim()).filter(Boolean);
+      changed();
+    });
+    root.appendChild(card);
+  }
+}
 
+function stationIdentityCard(stations, id, s, configured) {
+  const card = document.createElement("section");
+  card.className = "card station-identity-card";
   card.innerHTML = `
+    <div class="station-preview-frame">
+      <canvas class="station-preview" data-station-preview width="320" height="180"
+        role="img" aria-label="Isometric preview of ${esc(s.display_name || id)}"></canvas>
+    </div>
     <div class="card-head">
-      <input type="text" data-f="id" value="${esc(id)}" spellcheck="false" style="flex:1" placeholder="station_id">
-      <button class="danger" data-del>✕</button>
+      <div class="station-heading">
+        <strong data-station-title>${esc(s.display_name || id)}</strong>
+        <code>${esc(id)}</code>
+      </div>
     </div>
     <div class="form-grid">
       <label>Display name <input type="text" data-f="display_name" value="${esc(s.display_name || "")}"></label>
       <label>Texture (base64 or skin URL) <input type="text" data-f="texture" value="${esc(s.texture || "")}" spellcheck="false"></label>
-      <div class="with-chip">
-        <label>Block (plate stations; blank = head)
-          <input type="text" data-f="block" data-keys="blocks" value="${esc(s.block || "")}" spellcheck="false" placeholder="HEAVY_WEIGHTED_PRESSURE_PLATE"></label>
-        <canvas class="tex-chip" data-chip width="16" height="16"></canvas>
-      </div>
-      <label class="check"><input type="checkbox" data-f="oven_top" ${s.oven_top ? "checked" : ""}> Oven-top (install on a furnace/campfire)</label>
-    </div>
-    <div class="subsection">
-      <strong>Processes</strong>
-      <div class="row" data-procs>${STATION_PROCESSES.map(p =>
-        `<label class="check"><input type="checkbox" data-proc="${p}" ${procs.includes(p) ? "checked" : ""}> ${p}</label>`).join("")}</div>
-    </div>
-    <div class="subsection" data-recipe>
-      <strong>Crafting recipe</strong>
-      <label>Type
-        <select data-rmode>
-          <option value="none" ${rm.mode === "none" ? "selected" : ""}>none</option>
-          <option value="shapeless" ${rm.mode === "shapeless" ? "selected" : ""}>shapeless</option>
-          <option value="shaped" ${rm.mode === "shaped" ? "selected" : ""}>shaped</option>
-        </select></label>
-      <div data-recipe-body></div>
     </div>`;
 
-  // identity / scalar fields
-  card.addEventListener("input", (e) => {
-    const f = e.target.dataset.f;
-    if (!f) return;
-    if (f === "id") {
-      const nk = e.target.value.trim();
-      if (nk && nk !== id && stations[nk] === undefined) {
-        stations[nk] = stations[id]; delete stations[id]; id = nk; changed();
-      }
-      return;
+  card.addEventListener("input", e => {
+    const field = e.target.dataset.f;
+    if (!field) return;
+    if (!configured) {
+      stations[id] = s;
+      configured = true;
     }
-    if (f === "oven_top") s.oven_top = e.target.checked;
-    else if (f === "block") { const v = e.target.value.trim(); if (v) s.block = v; else delete s.block; paintStationChip(card, s); }
-    else s[f] = e.target.value;
+    s[field] = e.target.value;
+    if (field === "display_name") {
+      const name = e.target.value || id;
+      card.querySelector("[data-station-title]").textContent = name;
+      card.querySelector("[data-station-preview]").setAttribute("aria-label", `Isometric preview of ${name}`);
+    }
+    if (field === "texture") paintStationPreview(card, id, s);
     changed();
   });
 
-  // processes
-  card.querySelector("[data-procs]").addEventListener("change", (e) => {
-    const p = e.target.dataset.proc;
-    if (!p) return;
-    const set = new Set(Array.isArray(s.processes) ? s.processes : []);
-    if (e.target.checked) set.add(p); else set.delete(p);
-    s.processes = [...set];
-    changed();
-  });
-
-  // recipe mode + body
-  const body = card.querySelector("[data-recipe-body]");
-  const drawRecipe = () => renderRecipeBody(body, rm, () => { applyRecipe(s, rm); changed(); });
-  card.querySelector("[data-rmode]").addEventListener("change", (e) => {
-    rm.mode = e.target.value; applyRecipe(s, rm); drawRecipe(); changed();
-  });
-  drawRecipe();
-
-  card.querySelector("[data-del]").onclick = () => { delete stations[id]; buildStations(); changed(); };
-  MCAssets.onReady(() => paintStationChip(card, s));
-  paintStationChip(card, s);
+  MCAssets.onReady(() => paintStationPreview(card, id, s));
+  paintStationPreview(card, id, s);
   return card;
 }
 
-function paintStationChip(card, s) {
-  const canvas = card.querySelector("[data-chip]");
-  chip(canvas, matTex((s.block || "").trim()));
+function stationProject(canvas, x, y, z) {
+  const size = Math.min(canvas.width / 4.6, canvas.height / 2.6);
+  return [
+    canvas.width / 2 + (x - z) * size,
+    canvas.height * 0.68 + (x + z - 1) * size * 0.5 - y * size,
+  ];
 }
 
-/** Render the shapeless/shaped recipe editor into `body` for model `rm`. */
-function renderRecipeBody(body, rm, onChange) {
-  body.innerHTML = "";
-  if (rm.mode === "shapeless") {
-    const hint = document.createElement("p");
-    hint.className = "hint";
-    hint.textContent = "Materials consumed in any arrangement (comma separated).";
-    body.appendChild(hint);
-    const input = document.createElement("input");
-    input.type = "text"; input.spellcheck = false;
-    input.dataset.keys = "items";
-    input.dataset.multi = "";
-    input.placeholder = "STONE, BOWL, STICK";
-    input.value = rm.shapeless.join(", ");
-    input.addEventListener("input", () => {
-      rm.shapeless = input.value.split(",").map(x => x.trim()).filter(Boolean);
-      onChange();
-    });
-    body.appendChild(input);
-  } else if (rm.mode === "shaped") {
-    const hint = document.createElement("p");
-    hint.className = "hint";
-    hint.textContent = "Up to 3 rows of up to 3 symbols (space = empty). Map each symbol to a material below.";
-    body.appendChild(hint);
-    for (let i = 0; i < 3; i++) {
-      const row = document.createElement("input");
-      row.type = "text"; row.spellcheck = false; row.maxLength = 3;
-      row.style.fontFamily = "monospace";
-      row.placeholder = "row " + (i + 1);
-      row.value = rm.pattern[i] || "";
-      row.addEventListener("input", () => { rm.pattern[i] = row.value; syncKeysFromPattern(rm); drawKeys(); onChange(); });
-      body.appendChild(row);
-    }
-    const keysWrap = document.createElement("div");
-    keysWrap.style.marginTop = "6px";
-    body.appendChild(keysWrap);
-    const drawKeys = () => {
-      keysWrap.innerHTML = "";
-      for (const sym of symbolsOf(rm.pattern)) {
-        const r = document.createElement("div");
-        r.className = "row"; r.style.marginBottom = "6px";
-        r.innerHTML = `<span style="width:1.5em;font-family:monospace;text-align:center">${esc(sym)}</span>
-          <input type="text" data-keys="items" spellcheck="false" placeholder="MATERIAL" value="${esc(rm.keys[sym] || "")}">`;
-        r.querySelector("input").addEventListener("input", (e) => { rm.keys[sym] = e.target.value.trim(); onChange(); });
-        keysWrap.appendChild(r);
-      }
-    };
-    drawKeys();
+function stationPoly(ctx, points, color) {
+  ctx.beginPath();
+  ctx.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+/** Draw a texture into an isometric parallelogram and apply its face shade. */
+function stationIsoFace(ctx, texture, points, fallback, shade) {
+  stationPoly(ctx, points, fallback);
+  if (texture) {
+    const [p0, p1, , p3] = points;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(p0[0], p0[1]);
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+    ctx.closePath();
+    ctx.clip();
+    ctx.setTransform(
+      (p1[0] - p0[0]) / texture.width, (p1[1] - p0[1]) / texture.width,
+      (p3[0] - p0[0]) / texture.height, (p3[1] - p0[1]) / texture.height,
+      p0[0], p0[1]
+    );
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(texture, 0, 0);
+    ctx.restore();
   }
+  if (shade) stationPoly(ctx, points, shade);
 }
 
-/** Distinct non-space symbols used across the pattern rows, in first-seen order. */
-function symbolsOf(pattern) {
-  const seen = [];
-  for (const row of pattern) {
-    for (const ch of String(row)) {
-      if (ch !== " " && !seen.includes(ch)) seen.push(ch);
+function stationIsoBox(canvas, bounds, faces, fallback) {
+  const ctx = canvas.getContext("2d");
+  const { x0, x1, y0, y1, z0, z1 } = bounds;
+  const p = (x, y, z) => stationProject(canvas, x, y, z);
+  const left = [p(x0, y1, z1), p(x1, y1, z1), p(x1, y0, z1), p(x0, y0, z1)];
+  const right = [p(x1, y1, z0), p(x1, y1, z1), p(x1, y0, z1), p(x1, y0, z0)];
+  const top = [p(x0, y1, z0), p(x1, y1, z0), p(x1, y1, z1), p(x0, y1, z1)];
+  stationIsoFace(ctx, faces.left, left, fallback, "rgba(0,0,0,.16)");
+  stationIsoFace(ctx, faces.right, right, fallback, "rgba(0,0,0,.3)");
+  stationIsoFace(ctx, faces.top, top, fallback, "rgba(255,255,255,.07)");
+}
+
+function stationPreviewGround(canvas) {
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const ground = [
+    stationProject(canvas, -0.2, -0.02, -0.2),
+    stationProject(canvas, 1.2, -0.02, -0.2),
+    stationProject(canvas, 1.2, -0.02, 1.2),
+    stationProject(canvas, -0.2, -0.02, 1.2),
+  ];
+  stationPoly(ctx, ground, "rgba(0,0,0,.09)");
+}
+
+function paintStationPreview(card, id, station) {
+  const canvas = card.querySelector("[data-station-preview]");
+  if (!canvas) return;
+  stationPreviewGround(canvas);
+  const cube = MCAssets.headCube((station.texture || "").trim());
+  const headFaces = { top: cube?.top, left: cube?.front, right: cube?.right };
+  const fallback = MCAssets.colorFor(id);
+
+  if (id === "cooktop") {
+    const plateMaterial = station.block || "HEAVY_WEIGHTED_PRESSURE_PLATE";
+    const ironTop = MCAssets.block(plateMaterial, "top") || MCAssets.block("IRON_BLOCK", "top");
+    const ironSide = MCAssets.block(plateMaterial, "side") || MCAssets.block("IRON_BLOCK", "side");
+    const plateTop = 1 / 16;
+    stationIsoBox(canvas, { x0: 0, x1: 1, y0: 0, y1: plateTop, z0: 0, z1: 1 }, {
+      top: ironTop,
+      left: ironSide,
+      right: ironSide,
+    }, "#aeb2b4");
+    const heads = [];
+    for (const x of [0.25, 0.75]) for (const z of [0.25, 0.75]) heads.push({ x, z });
+    heads.sort((a, b) => (a.x + a.z) - (b.x + b.z));
+    // PlateStations uses scale 0.6 and y -0.06. A player head is half a
+    // block at scale 1, leaving only the cap above the 1/16-high iron plate.
+    const embeddedHeadTop = -0.06 + 0.6 * 0.25;
+    for (const { x, z } of heads) {
+      stationIsoBox(canvas, {
+        x0: x - 0.15, x1: x + 0.15,
+        y0: plateTop, y1: embeddedHeadTop,
+        z0: z - 0.15, z1: z + 0.15,
+      }, headFaces, fallback);
     }
+    return;
   }
-  return seen;
-}
 
-/** Drop key entries whose symbol no longer appears in the pattern. */
-function syncKeysFromPattern(rm) {
-  const used = new Set(symbolsOf(rm.pattern));
-  for (const k of Object.keys(rm.keys)) if (!used.has(k)) delete rm.keys[k];
+  stationIsoBox(canvas, { x0: 0.16, x1: 0.84, y0: 0, y1: 0.68, z0: 0.16, z1: 0.84 }, headFaces, fallback);
 }
 
 /** A generic "key + value" row with rename, edit, and delete. */
@@ -452,6 +603,161 @@ function esc(s) {
 
 // ── texture chips ────────────────────────────────────────────────────────────
 
+function highlightProject(canvas, p) {
+  const scale = Math.min(canvas.width / 5.2, canvas.height / 2.45);
+  return {
+    x: canvas.width / 2 + (p[0] - p[2]) * scale * 0.82,
+    y: canvas.height * 0.77 + (p[0] + p[2]) * scale * 0.36 - p[1] * scale,
+  };
+}
+
+function highlightPath(ctx, points) {
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+  ctx.closePath();
+}
+
+function highlightBoxFaces(canvas, min, max, material) {
+  const c = [];
+  for (let i = 0; i < 8; i++) {
+    c.push([(i & 1) ? max[0] : min[0], (i & 2) ? max[1] : min[1], (i & 4) ? max[2] : min[2]]);
+  }
+  return [
+    { idx: [6, 7, 3, 2], kind: "top", shade: "rgba(255,255,255,.08)" },
+    { idx: [7, 6, 4, 5], kind: "side", shade: "rgba(0,0,0,.16)" },
+    { idx: [3, 7, 5, 1], kind: "side", shade: "rgba(0,0,0,.30)" },
+  ].map(face => {
+    const world = face.idx.map(i => c[i]);
+    return {
+      points: world.map(p => highlightProject(canvas, p)),
+      depth: world.reduce((sum, p) => sum + p[0] + p[2], 0) / world.length,
+      texture: material === "AIR" ? null : MCAssets.block(material, face.kind),
+      fallback: material === "AIR" ? "transparent" : highlightFallback(material),
+      shade: face.shade,
+    };
+  });
+}
+
+function highlightFallback(material) {
+  const key = MCAssets.clean(material);
+  if (key === "black_stained_glass" || key === "black_stained_glass_pane") {
+    return "rgba(18,18,20,.18)";
+  }
+  if (key === "glass" || key.endsWith("_stained_glass") || key.endsWith("_stained_glass_pane")) {
+    return "rgba(190,225,232,.12)";
+  }
+  return MCAssets.colorFor(material);
+}
+
+function highlightBars(canvas, thickness, material) {
+  // The isometric canvas exaggerates narrow cuboids at this scale. Applying
+  // the empirically matched factor keeps 0.04 blocks as thin here as it is in
+  // game without changing the value written to config.yml.
+  const t = clamp(thickness, 0.005, 0.5) * 0.375;
+  const half = 0.5, ht = t / 2;
+  const boxes = [];
+  for (const x of [-half, half]) {
+    for (const z of [-half, half]) boxes.push([[x - ht, -ht, z - ht], [x + ht, 1 + ht, z + ht]]);
+  }
+  for (const y of [0, 1]) {
+    for (const z of [-half, half]) boxes.push([[-half - ht, y - ht, z - ht], [half + ht, y + ht, z + ht]]);
+  }
+  for (const y of [0, 1]) {
+    for (const x of [-half, half]) boxes.push([[x - ht, y - ht, -half - ht], [x + ht, y + ht, half + ht]]);
+  }
+  return boxes.flatMap(([min, max]) => highlightBoxFaces(canvas, min, max, material));
+}
+
+function configuredGlowColor(value) {
+  const named = {
+    WHITE: "#ffffff", RED: "#ff5555", GREEN: "#55ff55", BLUE: "#5555ff",
+    YELLOW: "#ffff55", AQUA: "#55ffff", ORANGE: "#ffaa00", PURPLE: "#aa00aa", BLACK: "#000000",
+  };
+  const key = String(value || "").trim().toUpperCase();
+  return /^#[0-9A-F]{6}$/.test(key) ? key : (named[key] || "#000000");
+}
+
+function drawHighlightGrid(canvas, ctx) {
+  const line = getComputedStyle(document.documentElement).getPropertyValue("--line").trim() || "#2b3037";
+  ctx.strokeStyle = line;
+  ctx.globalAlpha = 0.55;
+  ctx.lineWidth = 1;
+  for (let i = -3; i <= 3; i++) {
+    const a = highlightProject(canvas, [i, 0, -3]);
+    const b = highlightProject(canvas, [i, 0, 3]);
+    const c = highlightProject(canvas, [-3, 0, i]);
+    const d = highlightProject(canvas, [3, 0, i]);
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(d.x, d.y); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawHighlightGuide(canvas, ctx) {
+  const faces = highlightBoxFaces(canvas, [-0.5, 0, -0.5], [0.5, 1, 0.5], "AIR");
+  for (const face of faces) {
+    highlightPath(ctx, face.points);
+    ctx.fillStyle = "rgba(255,255,255,.025)";
+    ctx.fill();
+  }
+}
+
+function paintHighlightFace(ctx, face, glow, glowColor) {
+  const path = () => highlightPath(ctx, face.points);
+  if (glow) {
+    ctx.save();
+    path();
+    ctx.shadowColor = glowColor;
+    ctx.shadowBlur = 14;
+    ctx.globalAlpha = 0.7;
+    ctx.fillStyle = glowColor;
+    ctx.fill();
+    ctx.restore();
+  }
+  path();
+  ctx.fillStyle = face.fallback;
+  ctx.fill();
+  if (face.texture) {
+    const [p0, p1, , p3] = face.points;
+    ctx.save();
+    path(); ctx.clip();
+    ctx.setTransform(
+      (p1.x - p0.x) / face.texture.width, (p1.y - p0.y) / face.texture.width,
+      (p3.x - p0.x) / face.texture.height, (p3.y - p0.y) / face.texture.height,
+      p0.x, p0.y
+    );
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(face.texture, 0, 0);
+    ctx.restore();
+  }
+  path();
+  ctx.fillStyle = face.shade;
+  ctx.fill();
+}
+
+function drawHighlightPreview() {
+  const canvas = $("highlight-preview");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const ch = sect("crop_highlight");
+  const material = String(ch.block || "BLACK_STAINED_GLASS").trim() || "BLACK_STAINED_GLASS";
+  const thickness = clamp(num(ch.thickness, 0.04), 0.005, 0.5);
+  const glow = ch.glow === true;
+  const glowColor = configuredGlowColor(ch.glow_color);
+  drawHighlightGrid(canvas, ctx);
+  drawHighlightGuide(canvas, ctx);
+  const faces = highlightBars(canvas, thickness, material).sort((a, b) => a.depth - b.depth);
+  for (const face of faces) paintHighlightFace(ctx, face, glow, glowColor);
+
+  const detail = `${material} bars · ${thickness} blocks thick · glow ${glow ? "on" : "off"}`;
+  $("highlight-preview-detail").textContent = detail;
+  canvas.setAttribute("aria-label", `Example one-block crop hitbox outlined with ${material} bars ${thickness} blocks thick. Glow ${glow ? "on" : "off"}.`);
+}
+
 function matTex(name) {
   if (!name) return null;
   return MCAssets.item(name) || MCAssets.blockSprite(name) || MCAssets.block(name, "side");
@@ -468,7 +774,8 @@ function chip(canvasEl, tex) {
   if (tex) c.drawImage(tex, 0, 0, 16, 16);
   else { c.fillStyle = "#3a3f46"; c.fillRect(2, 2, 12, 12); }
 }
-MCAssets.onReady(() => paintChips());
+MCAssets.onReady(() => { paintChips(); drawHighlightPreview(); });
+document.addEventListener("ui:theme", drawHighlightPreview);
 
 // ── static event wiring ──────────────────────────────────────────────────────
 
@@ -484,10 +791,10 @@ function bindStatic() {
   bindNum("mc-xp", v => sect("mcmmo").default_herbalism_xp = Math.max(0, Math.round(v)));
   bindNum("mc-chance", v => sect("mcmmo").herbalism_double_drop_chance = clamp(v, 0, 1));
 
-  bindTxt("ch-block", v => { sect("crop_highlight").block = v.trim(); paintChips(); });
-  bindNum("ch-thickness", v => sect("crop_highlight").thickness = clamp(v, 0.005, 0.5));
-  bindChk("ch-glow", v => sect("crop_highlight").glow = v);
-  bindTxt("ch-color", v => sect("crop_highlight").glow_color = v.trim());
+  bindTxt("ch-block", v => { sect("crop_highlight").block = v.trim(); paintChips(); drawHighlightPreview(); });
+  bindNum("ch-thickness", v => { sect("crop_highlight").thickness = clamp(v, 0.005, 0.5); drawHighlightPreview(); });
+  bindChk("ch-glow", v => { sect("crop_highlight").glow = v; $("ch-glow-options").hidden = !v; drawHighlightPreview(); });
+  bindTxt("ch-color", v => { sect("crop_highlight").glow_color = v.trim(); drawHighlightPreview(); });
 
   bindNum("ins-decay", v => sect("insanity").decay_per_check = v);
   bindNum("ins-dose", v => sect("insanity").dose_factor = v);
@@ -499,7 +806,10 @@ function bindStatic() {
   bindTxt("ruined-name", v => sect("quality", "ruined_item").name = v);
   bindTxt("ruined-lore", v => sect("quality", "ruined_item").lore = v);
 
-  bindNum("vf-default", v => sect("vanilla_foods").default_lifetime_minutes = Math.max(0, v));
+  bindNum("vf-default", v => {
+    sect("vanilla_foods").default_lifetime_minutes = Math.max(0, Math.round(v));
+    updateDefaultFoodDuration();
+  });
   bindNum("vc-default", v => sect("vanilla_crops").default_outside_rate = clamp(v, 0, 1));
 
   $("btn-add-vf").onclick = () => {
@@ -508,15 +818,8 @@ function bindStatic() {
     while (items[name] !== undefined) name = "NEW_FOOD_" + i++;
     items[name] = 60; buildVanillaFoods(); changed();
   };
-  $("btn-add-station").onclick = () => {
-    const stations = sect("stations");
-    let i = 1, name = "new_station";
-    while (stations[name] !== undefined) name = "new_station_" + i++;
-    stations[name] = { display_name: "New Station", texture: "", processes: [] };
-    buildStations(); changed();
-  };
-  $("btn-add-bg").onclick = () => addGroup(sect("biome_groups"), "biome-groups", "new_biome_group");
-  $("btn-add-cg").onclick = () => addGroup(sect("consumable_groups"), "consumable-groups", "new_group");
+  $("btn-add-bg").onclick = () => addGroup(sect("biome_groups"), "biome-groups", "new_biome_group", "biomes");
+  $("btn-add-cg").onclick = () => addGroup(sect("consumable_groups"), "consumable-groups", "new_group", "group-members");
   $("btn-add-vc").onclick = () => {
     const crops = sect("vanilla_crops", "crops");
     let i = 1, name = "NEW_CROP";
@@ -553,11 +856,11 @@ function bindStatic() {
   };
 }
 
-function addGroup(obj, rootId, base) {
+function addGroup(obj, rootId, base, memberKeys) {
   let i = 1, name = base;
   while (obj[name] !== undefined) name = base + "_" + i++;
   obj[name] = [];
-  buildGroups(rootId, obj); changed();
+  buildGroups(rootId, obj, memberKeys); changed();
 }
 
 // Copy button is matched by selector (the shared `$` helper is id-only).

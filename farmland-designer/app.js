@@ -132,7 +132,40 @@ function toView(p) {
 }
 function project(p) {
   const v = toView(p);
-  return { x: canvas.width/2 + v[0]*state.view.zoom, y: canvas.height/2 + 40 - v[1]*state.view.zoom, z: v[2] };
+  // Keep the configured radius and its source block in frame while preserving
+  // the user's zoom as the base scale.
+  const radius = Math.max(1, cur()?.radius || 1);
+  const zoom = state.view.zoom / Math.max(1, radius / 2.5);
+  return { x: canvas.width/2 + v[0]*zoom, y: canvas.height/2 + 40 - v[1]*zoom, z: v[2] };
+}
+
+function hydrationKind(t) {
+  return (t?.source || "WATER").toUpperCase() === "LAVA" ? "lava" : "water";
+}
+
+function syncPreviewChrome(t) {
+  const empty = !t;
+  document.body.classList.toggle("farmland-empty", empty);
+  $("farmland-preview-empty").hidden = !empty;
+  $("farmland-editor-empty").hidden = !empty;
+  $("preview-summary").hidden = empty;
+  document.querySelectorAll(".outline [data-pane-target]").forEach(button => button.disabled = empty);
+  if (empty) {
+    $("pane-title").textContent = "Farmland";
+    return;
+  }
+  const activePane = document.querySelector(".outline [data-pane-target].on");
+  if (activePane) {
+    $("pane-title").textContent = activePane.dataset.paneTitle || activePane.textContent.trim();
+  }
+  const kind = hydrationKind(t);
+  document.body.dataset.hydration = kind;
+  $("hydration-content-label").textContent = `${kind} content`;
+  $("hydration-preview-hint").textContent = `drag to orbit · scroll to zoom · the ${kind === "lava" ? "orange" : "blue"} ring shows the hydration radius`;
+  const amount = Math.round(state.view.water * 100);
+  const name = LegacyText.toHtml(t.name || t.id, esc);
+  $("preview-summary").innerHTML = `<span class="name">${name}</span>`
+    + `<span class="detail">${amount}% ${kind} · ${Math.round(t.baseline * 100)}% baseline · radius ${t.radius} · dries ${t.dryRate}/min</span>`;
 }
 
 /** Axis-aligned box from min/max corners, with a texture name. */
@@ -162,19 +195,14 @@ function draw() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const t = cur();
+  syncPreviewChrome(t);
   if (!t) {
-    ctx.fillStyle = "rgba(138,148,161,0.8)";
-    ctx.font = "15px Consolas, monospace";
-    ctx.textAlign = "center";
-    ctx.fillText("No farmland types. Upload a Farmland YAML or press \"+ farmland type\" to add one.",
-      canvas.width / 2, canvas.height / 2);
-    ctx.textAlign = "left";
     return;
   }
   const srcBlock = (t.sources.split(",")[0] || "SAND").trim() || "SAND";
 
   // hydration radius ring (on the ground plane)
-  ctx.strokeStyle = "rgba(80,140,220,0.5)";
+  ctx.strokeStyle = hydrationKind(t) === "lava" ? "rgba(231,101,34,0.68)" : "rgba(61,128,215,0.68)";
   ctx.setLineDash([6, 5]);
   ctx.beginPath();
   const R = t.radius + 0.5;
@@ -210,25 +238,6 @@ function draw() {
     paintFace(f);
   }
 
-  // HUD: water content of the previewed plot
-  const water = state.view.water;
-  const baseline = t.baseline;
-  const nameColor = "rgba(215,221,229,0.85)";
-  const cursor = LegacyText.drawRuns(ctx, t.name || t.id, 14, 22, nameColor, "13px Consolas, monospace");
-  ctx.fillStyle = nameColor;
-  ctx.fillText(`, water ${(water*100)|0}% (default baseline ${(baseline*100)|0}%)`, cursor, 22);
-  ctx.fillStyle = "rgba(138,148,161,0.8)";
-  ctx.fillText(`dries ${t.dryRate}/min toward baseline without water in radius ${t.radius}`, 14, 40);
-
-  // moisture bar
-  ctx.fillStyle = "#1c2128";
-  ctx.fillRect(14, 50, 180, 8);
-  ctx.fillStyle = water >= baseline ? "#4f9fbf" : "#c75450";
-  ctx.fillRect(14, 50, 180 * water, 8);
-  ctx.strokeStyle = "#313a45";
-  ctx.strokeRect(14, 50, 180, 8);
-  ctx.fillStyle = "#6fbf4f";
-  ctx.fillRect(14 + 180 * baseline - 1, 48, 2, 12);
 }
 
 function paintFace(f) {
@@ -291,26 +300,30 @@ function buildPanels() {
   const tabs = $("type-tabs");
   tabs.innerHTML = "";
   state.types.forEach((t, i) => {
+    const row = document.createElement("div");
+    row.className = "entity-nav-row";
     const b = document.createElement("button");
     b.textContent = t.id || `type ${i+1}`;
     b.className = i === state.current ? "active" : "";
     b.onclick = () => { state.current = i; changed(true); };
-    tabs.appendChild(b);
-  });
-  if (state.types.length >= 1) {
+    row.appendChild(b);
     const del = document.createElement("button");
-    del.textContent = "✕";
+    del.textContent = "\u2715";
     del.className = "danger";
-    del.title = "Delete current type";
+    del.title = `Delete ${t.id || `type ${i + 1}`}`;
+    del.setAttribute("aria-label", del.title);
     del.onclick = () => {
-      state.types.splice(state.current, 1);
-      state.current = clamp(state.current, 0, state.types.length - 1);
+      state.types.splice(i, 1);
+      if (i < state.current) state.current--;
+      else if (i === state.current) state.current = clamp(i, 0, state.types.length - 1);
       changed(true);
     };
-    tabs.appendChild(del);
-  }
+    row.appendChild(del);
+    tabs.appendChild(row);
+  });
 
   const t = cur();
+  syncPreviewChrome(t);
   if (!t) {
     // empty editor - blank the form and clear the biome list
     ["fl-id", "fl-name", "fl-sources", "fl-tools", "fl-wrongtool", "fl-visual", "fl-source",
@@ -318,6 +331,7 @@ function buildPanels() {
     $("fl-notill").checked = false;
     $("biome-list").innerHTML = "";
     paintChip();
+    UI.refresh();
     return;
   }
   $("fl-id").value = t.id; $("fl-name").value = t.name;
@@ -336,9 +350,9 @@ function buildPanels() {
     card.className = "card";
     card.innerHTML = `
       <div class="row">
-        <label>biome key <input type="text" data-f="biome" value="${esc(b.biome)}" spellcheck="false"></label>
+        <label>biome key <input type="text" data-f="biome" data-keys="biomes" value="${esc(b.biome)}" spellcheck="false"></label>
         <label>baseline <input type="number" data-f="value" min="0" max="1" step="0.05" value="${b.value}"></label>
-        <button class="danger" data-del style="align-self:flex-end">✕</button>
+        <button class="danger row-delete" data-del>✕</button>
       </div>`;
     card.addEventListener("input", (e) => {
       const f = e.target.dataset.f;
@@ -350,6 +364,8 @@ function buildPanels() {
     root.appendChild(card);
   });
   paintChip();
+  // repaint the shared controls (meters, '&'-code name field) for this type
+  UI.refresh();
 }
 
 function esc(s) {
@@ -493,6 +509,10 @@ function bindEvents() {
 // ── boot ───────────────────────────────────────────────────────────────────
 
 bindEvents();
+document.addEventListener("ui:pane", () => {
+  if (!cur()) $("pane-title").textContent = "Farmland";
+});
 buildPanels();
 renderYAML();
 draw();
+setTimeout(() => syncPreviewChrome(cur()), 0);

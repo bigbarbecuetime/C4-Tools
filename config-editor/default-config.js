@@ -157,9 +157,9 @@ visuals:
 # through walls); with it off the bars are just the plain block. 'glow_color' is a
 # name (BLACK, WHITE, RED, GREEN, BLUE, YELLOW, AQUA, ORANGE, PURPLE) or #RRGGBB.
 crop_highlight:
-  block: GLASS
+  block: BLACK_STAINED_GLASS
   thickness: 0.04
-  glow: true
+  glow: false
   glow_color: BLACK
 
 # ____________________ Vanilla food spoilage ____________________
