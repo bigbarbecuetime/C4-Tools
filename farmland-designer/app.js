@@ -5,6 +5,10 @@
  */
 "use strict";
 
+// Farmland is hydrated by a fluid: vanilla water, or lava for nether soils.
+// Nothing else hydrates, so the designer offers only these two.
+const HYDRATION_SOURCES = ["WATER", "LAVA"];
+
 const STORE_KEY = "farmland-designer-v1";
 const $ = (id) => document.getElementById(id);
 const colorFor = MCAssets.colorFor;
@@ -339,7 +343,7 @@ function buildPanels() {
   $("fl-wrongtool").value = t.wrongToolMessage || "";
   $("fl-visual").value = t.visual;
   $("fl-notill").checked = t.needsTilling === false;
-  $("fl-source").value = t.source || "WATER";
+  $("fl-source").value = HYDRATION_SOURCES.includes(t.source) ? t.source : "WATER";
   $("fl-radius").value = t.radius; $("fl-baseline").value = t.baseline; $("fl-dryrate").value = t.dryRate;
 
   // biome baselines
@@ -439,7 +443,7 @@ function bindEvents() {
   $("fl-notill").addEventListener("input", (e) => {
     if (!cur()) return; cur().needsTilling = !e.target.checked; changed(false);
   });
-  bind("fl-source", t => cur().source = (t.value.trim().toUpperCase() || "WATER"));
+  bind("fl-source", t => cur().source = HYDRATION_SOURCES.includes(t.value) ? t.value : "WATER");
   bind("fl-radius", t => cur().radius = clamp(num(t.value, 4), 1, 8));
   bind("fl-baseline", t => cur().baseline = clamp(num(t.value, 0.1), 0, 1));
   bind("fl-dryrate", t => cur().dryRate = Math.max(0, num(t.value, 0.05)));

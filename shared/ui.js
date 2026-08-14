@@ -445,6 +445,47 @@ const UI = (() => {
     if (!document.body.dataset.screen) document.body.dataset.screen = "outline";
   }
 
+  /* ── modal ────────────────────────────────────────────────────────── */
+
+  /**
+   * Opens a modal panel over the page and returns its close function.
+   * `build(body, close)` fills the scrolling body; Escape, the header's
+   * close button and a click on the scrim all dismiss it. Focus returns to
+   * whatever opened it so keyboard use survives the round trip.
+   */
+  function modal(opts) {
+    const o = opts || {};
+    const opener = document.activeElement;
+    const scrim = document.createElement("div");
+    scrim.className = "modal-scrim";
+    scrim.innerHTML = `<div class="modal" role="dialog" aria-modal="true" tabindex="-1">
+      <div class="modal-head"><strong>${escHtml(o.title || "")}</strong><span class="grow"></span>
+        <button class="danger" data-modal-close aria-label="Close">✕</button></div>
+      <div class="modal-body"></div>
+    </div>`;
+    const close = () => {
+      if (!scrim.isConnected) return;
+      document.removeEventListener("keydown", onKey, true);
+      scrim.remove();
+      if (opener && opener.isConnected) opener.focus();
+    };
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      // An open key picker takes the first Escape; the modal takes the next.
+      // Read that in the capture phase, before the picker hides its dropdown.
+      if (document.querySelector(".kp-drop:not([hidden])")) return;
+      e.stopPropagation();
+      close();
+    };
+    scrim.addEventListener("click", (e) => { if (e.target === scrim) close(); });
+    scrim.querySelector("[data-modal-close]").onclick = close;
+    document.addEventListener("keydown", onKey, true);
+    document.body.appendChild(scrim);
+    if (o.build) o.build(scrim.querySelector(".modal-body"), close);
+    scrim.querySelector(".modal").focus();
+    return close;
+  }
+
   /** Re-run the control upgrades and repaints after a page rebuilds markup. */
   function refresh(root) {
     upgradeSwitches(root);
@@ -466,7 +507,7 @@ const UI = (() => {
   }
 
   return {
-    icon, logo, initShell, refresh, selectPane, screen, mainView,
+    icon, logo, modal, initShell, refresh, selectPane, screen, mainView,
     setTheme, currentTheme, growthSegments, growthPaint, escHtml,
   };
 })();

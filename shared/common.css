@@ -140,6 +140,8 @@ svg.i.sm { width: 15px; height: 15px; }
    round it, not by flooding it with a colour. Selection uses that; the
    accent stays for values (bars, meters) and for the one primary action. */
 .row-nav.on,
+.seg button.on,
+.picker-row.on,
 .stage-bar button.active,
 .tab-bar button.active,
 .mnav button.on,
@@ -594,8 +596,29 @@ body[data-hydration="lava"] #water-slider { accent-color: var(--lava); }
 
 /* a bare range (water content, brush size, ...) */
 input[type="range"] { accent-color: var(--accent); height: 22px; flex: 1; }
-.shape-grid { display: grid; grid-template-columns: repeat(3, 46px); gap: 3px; margin: 5px 0; }
-.shape-grid input { text-align: center; font-size: 14px; padding: 8px 0; text-transform: uppercase; }
+/* a two-way mode picker: same frosted "selected" treatment as the outline */
+.seg { display: flex; gap: 4px; }
+.seg button { flex: 1; }
+
+/* shaped recipe: the 3x3 pattern drawn as inventory slots. A slot is the
+   control that opens the ingredient picker, so it carries the sunk face
+   rather than a button's raised one. */
+.recipe-grid { display: grid; grid-template-columns: repeat(3, 52px); gap: 4px; margin: 5px 0; }
+.recipe-grid[hidden], .seg[hidden] { display: none; }
+.recipe-slot {
+  position: relative; width: 52px; height: 52px; padding: 0; color: var(--muted2);
+  background: var(--sunk); font: 400 16px var(--mono);
+  box-shadow: inset 2px 2px 0 var(--edge-d), inset -2px -2px 0 var(--edge-l);
+}
+.recipe-slot:hover { background: var(--raise); color: var(--text); }
+.recipe-slot.filled { color: var(--text); }
+.recipe-slot canvas { width: 32px; height: 32px; image-rendering: pixelated; }
+.recipe-slot .slot-symbol {
+  position: absolute; right: 3px; bottom: 2px; font: 700 10px var(--mono); color: var(--muted);
+}
+.recipe-slot.orphan { color: var(--warn); }
+.recipe-ing-head { display: flex; align-items: center; gap: 7px; }
+.recipe-ing-head .slot-symbol { font: 700 11px var(--mono); color: var(--muted); }
 
 .events-editor .ev-trigger { margin: 7px 0; }
 .events-editor .ev-list { display: flex; flex-direction: column; gap: 7px; }
@@ -641,7 +664,8 @@ input[type="range"] { accent-color: var(--accent); height: 22px; flex: 1; }
 .ms-drop { top: 100%; left: 0; right: 0; margin-top: 2px; }
 .ms-drop input[type="text"] { box-shadow: none; border-bottom: 1px solid var(--line); }
 .ms-list, .kp-drop { max-height: 260px; overflow-y: auto; }
-.kp-drop { font: 12px var(--mono); }
+/* z-index clears a modal (200): the key picker opens inside one */
+.kp-drop { z-index: 250; font: 12px var(--mono); }
 .ms-row, .kp-row {
   display: flex; align-items: center; gap: 7px; padding: 4px 8px; font-size: 12px;
   color: var(--text); cursor: pointer; white-space: nowrap;
@@ -770,6 +794,29 @@ body:is([data-preview-mode="biomes"], [data-preview-mode="effects"]) #preview-to
   text-overflow: ellipsis; white-space: nowrap; }
 #gizmo-bar .gizmo-empty { font-size: 12px; color: var(--muted2); font-style: italic; padding-top: 5px; }
 #gizmo-bar.orbit-mode .gizmo-els-row { opacity: .45; }
+
+/* ── modal ───────────────────────────────────────────────────────────────
+   A panel laid over the page for a choice that needs the whole list (the
+   recipe slot picker). Same bevel as any panel, dimmed page behind it. */
+.modal-scrim {
+  position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center;
+  padding: 20px; background: rgba(0, 0, 0, .55);
+}
+.modal {
+  display: flex; flex-direction: column; width: min(400px, 100%); max-height: 100%;
+  background: var(--panel);
+  box-shadow: inset 2px 2px 0 var(--edge-l), inset -2px -2px 0 var(--edge-d), 0 14px 34px rgba(0, 0, 0, .5);
+}
+.modal-head {
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.modal-head strong { font: 600 12.5px var(--ui); }
+.modal-body { display: flex; flex-direction: column; gap: 9px; padding: 12px; overflow-y: auto; }
+.picker-list { display: flex; flex-direction: column; gap: 4px; }
+.picker-row { width: 100%; justify-content: flex-start; gap: 9px; padding: 7px 9px; text-align: left; }
+.picker-row canvas { width: 24px; height: 24px; flex-shrink: 0; image-rendering: pixelated; }
+.picker-row .picker-note { margin-left: auto; font: 400 11px var(--mono); color: var(--muted); }
 
 /* ── 11  mobile: one screen at a time ───────────────────────────────────── */
 .mnav, .backslab { display: none; }

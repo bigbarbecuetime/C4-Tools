@@ -47,6 +47,7 @@ function blankItem(id) {
                furnaceTypes: { furnace: true, smoker: false, blast_furnace: false,
                                campfire: true, soul_campfire: true } },
     ingredients: [],
+    shaped: false,          // shaped = the 3x3 pattern below; shapeless = any layout
     shape: ["", "", ""],
     addiction: { enabled: false, maxLevel: 1.0, decayPerTick: 0.001, effectSeverity: 1.0,
                  windowTicks: 36000, damageThresholdTicks: 72000, damagePerInterval: 0.5,
@@ -125,6 +126,7 @@ function load() {
       for (const it of loaded.items || []) {
         if (!it.perishable) it.perishable = { enabled: false, lifetimeMinutes: 10080 };
         if (it.headTexture == null) it.headTexture = "";
+        if (it.shaped == null) it.shaped = (it.shape || []).some(r => (r || "").trim());
         if (!it.process.furnaceTypes) it.process.furnaceTypes =
           { furnace: true, smoker: false, blast_furnace: false, campfire: true, soul_campfire: true };
         else if (it.process.furnaceTypes.campfire == null) {
@@ -210,6 +212,7 @@ function itemFromYaml(id, o) {
   }));
   if (Array.isArray(o.shape)) {
     it.shape = [0, 1, 2].map(i => o.shape[i] != null ? String(o.shape[i]) : "");
+    it.shaped = it.shape.some(r => r.trim());
   }
   if (o.addiction) {
     const a = o.addiction;
@@ -510,52 +513,7 @@ function buildForm() {
   syncMinigameFields();
 
   // ingredients
-  const ing = section("Ingredients", `<div data-sub="ing-list"></div>
-    <button class="add" data-add-ing>+ ingredient</button>
-    <p class="hint">Shaped recipe (optional): give ingredients single letter symbols, then fill
-    the grid where each should go. Leave the grid blank for shapeless.</p>
-    <div class="shape-grid" data-sub="shape"></div>`, () => {});
-  root.appendChild(ing);
-  const ingRoot = ing.querySelector("[data-sub=ing-list]");
-  it.ingredients.forEach((rule, i) => ingRoot.appendChild(ingredientCard(it, rule, i)));
-  ing.querySelector("[data-add-ing]").onclick = () => {
-    it.ingredients.push({ kind: "material", value: "SUGAR", maxUnits: 4, symbol: "",
-                          addictiveness: 0, effects: [] });
-    changed(true);
-  };
-  const shapeRoot = ing.querySelector("[data-sub=shape]");
-  for (let r = 0; r < 3; r++) {
-    for (let c = 0; c < 3; c++) {
-      const cell = document.createElement("input");
-      cell.type = "text";
-      cell.maxLength = 1;
-      cell.value = (it.shape[r] || "")[c] === " " ? "" : ((it.shape[r] || "")[c] || "");
-      cell.addEventListener("input", () => {
-        const row = (it.shape[r] || "").padEnd(3, " ").split("");
-        row[c] = cell.value ? cell.value : " ";
-        it.shape[r] = row.join("").replace(/\s+$/, "").padEnd(0);
-        renderYAML(); save();
-      });
-      shapeRoot.appendChild(cell);
-    }
-  }
-
-  // Smelt recipes accept one ingredient. Hide the add button after one exists.
-  {
-    const addIngBtn = ing.querySelector("[data-add-ing]");
-    const smeltNote = document.createElement("p");
-    smeltNote.className = "hint";
-    smeltNote.textContent = "Smelt recipes accept exactly one ingredient.";
-    ing.querySelector("[data-sub=ing-list]").before(smeltNote);
-    const syncSmeltIngredient = () => {
-      const isSmelt = it.process.enabled && it.process.type === "smelt";
-      addIngBtn.style.display = (isSmelt && it.ingredients.length >= 1) ? "none" : "";
-      smeltNote.style.display = isSmelt ? "" : "none";
-    };
-    syncSmeltIngredient();
-    // Fires after procSection's own input listener has already updated it.process.type
-    root.addEventListener("input", syncSmeltIngredient);
-  }
+  root.appendChild(ingredientsSection(it, root));
 
   // addiction
   const add = it.addiction;
@@ -708,27 +666,311 @@ function toggleSection(title, obj, key, innerHTML, onInput) {
   return div;
 }
 
+// ── ingredients ────────────────────────────────────────────────────────────
+
+/** A crafting grid holds nine slots, so a recipe names at most nine things. */
+const MAX_INGREDIENTS = 9;
+const SHAPE_SYMBOLS = "ABCDEFGHI";
+const INGREDIENT_KINDS = [
+  ["material", "vanilla material", "material"],
+  ["item", "consumable id", "consumable id"],
+  ["seed", "crop seed", "crop id (uses that crop's seed)"],
+  ["tag", "group tag", "group name (consumable_groups)"],
+];
+
+function kindOptions(kind) {
+  return INGREDIENT_KINDS.map(([value, label]) =>
+    `<option value="${value}" ${kind === value ? "selected" : ""}>${label}</option>`).join("");
+}
+function kindValueLabel(kind) {
+  return (INGREDIENT_KINDS.find(k => k[0] === kind) || INGREDIENT_KINDS[0])[2];
+}
+function newIngredient(symbol) {
+  return { kind: "material", value: "SUGAR", maxUnits: 4, symbol: symbol || "",
+           addictiveness: 0, effects: [] };
+}
+/** What an ingredient matches, in the words the form uses for it. */
+function ingredientLabel(rule) {
+  const v = (rule.value || "").trim();
+  if (!v) return "(unset)";
+  return rule.kind === "tag" ? `tag: ${v}`
+    : rule.kind === "seed" ? `${v} seed`
+      : rule.kind === "item" ? `${v} (consumable)` : v;
+}
+
+/** First unused pattern letter, or "" once all nine are taken. */
+function nextSymbol(it) {
+  const used = new Set(it.ingredients.map(r => r.symbol));
+  return [...SHAPE_SYMBOLS].find(c => !used.has(c)) || "";
+}
+function shapeChar(it, r, c) {
+  const ch = (it.shape[r] || "")[c];
+  return ch && ch !== " " ? ch : "";
+}
+function setShapeChar(it, r, c, ch) {
+  const row = (it.shape[r] || "").padEnd(3, " ").split("");
+  row[c] = ch || " ";
+  it.shape[r] = row.join("").replace(/\s+$/, "");
+}
+function ingredientBySymbol(it, ch) {
+  return it.ingredients.find(r => r.symbol === ch) || null;
+}
+/** Empties every cell holding this letter - its ingredient just went away. */
+function clearSymbolCells(it, ch) {
+  if (!ch) return;
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) if (shapeChar(it, r, c) === ch) setShapeChar(it, r, c, "");
+  }
+}
+function isPlaced(it, ch) {
+  return !!ch && it.shape.some(row => (row || "").includes(ch));
+}
+/**
+ * The pattern cropped to the cells actually used: equal-length rows, never an
+ * empty one (ConsumableConfig rejects those outright) and no blank border,
+ * which the matcher slides past anyway. Empty grid = no shape = shapeless.
+ */
+function shapeRowsForYaml(it) {
+  if (!it.shaped) return [];
+  const cells = [0, 1, 2].map(r => [0, 1, 2].map(c => shapeChar(it, r, c)));
+  const rows = [0, 1, 2].filter(r => cells[r].some(Boolean));
+  const cols = [0, 1, 2].filter(c => cells.some(row => row[c]));
+  if (!rows.length) return [];
+  const out = [];
+  for (let r = rows[0]; r <= rows[rows.length - 1]; r++) {
+    let row = "";
+    for (let c = cols[0]; c <= cols[cols.length - 1]; c++) row += cells[r][c] || " ";
+    out.push(row);
+  }
+  return out;
+}
+
+/** 16x16 chip for an ingredient; vanilla materials get their real texture. */
+function paintIngredientChip(canvas, rule) {
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, 16, 16);
+  const tex = rule.kind === "material" ? MCAssets.item(rule.value) : null;
+  if (tex) ctx.drawImage(tex, 0, 0, 16, 16);
+  else { ctx.fillStyle = MCAssets.colorFor(rule.value || rule.kind); ctx.fillRect(3, 3, 10, 10); }
+}
+/** Repaints every ingredient chip on the page as textures stream in. */
+function paintIngredientChips() {
+  const it = cur();
+  if (!it) return;
+  document.querySelectorAll("canvas[data-ing-chip]").forEach(canvas => {
+    const rule = it.ingredients[+canvas.dataset.ingChip];
+    if (rule) paintIngredientChip(canvas, rule);
+  });
+}
+function ingredientChip(rule, i) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 16; canvas.height = 16;
+  canvas.dataset.ingChip = i;
+  paintIngredientChip(canvas, rule);
+  return canvas;
+}
+
+let smeltWatcher = null; // the live form-wide listener, replaced on rebuild
+
+/**
+ * The Ingredients section: a shapeless list, or the shaped 3x3 pattern whose
+ * slots open the ingredient picker. `root` is the form, so the section can
+ * rebuild itself when the process type switches to (or off) smelt.
+ */
+function ingredientsSection(it, root) {
+  const isSmelt = it.process.enabled && it.process.type === "smelt";
+  // Smelting has no crafting grid to lay a pattern out in.
+  if (isSmelt && it.shaped) { it.shaped = false; it.shape = ["", "", ""]; }
+  const shaped = !!it.shaped;
+
+  const ing = section("Ingredients", `
+    <div class="seg" data-sub="mode" ${isSmelt ? "hidden" : ""}>
+      <button type="button" data-mode="shapeless" class="${shaped ? "" : "on"}">Shapeless</button>
+      <button type="button" data-mode="shaped" class="${shaped ? "on" : ""}">Shaped</button>
+    </div>
+    <p class="hint" data-sub="mode-hint"></p>
+    <div class="recipe-grid" data-sub="grid" ${shaped ? "" : "hidden"}></div>
+    <div data-sub="ing-list"></div>
+    <button class="add" data-add-ing>+ ingredient</button>`, () => {});
+
+  ing.querySelector("[data-sub=mode-hint]").textContent = isSmelt
+    ? "Smelt recipes accept exactly one ingredient."
+    : shaped
+      ? "Fill the slots the way the recipe must be laid out in a crafting grid. A slot opens its ingredient."
+      : "Any layout crafts this, as long as every ingredient is in the grid. Up to nine.";
+
+  const grid = ing.querySelector("[data-sub=grid]");
+  if (shaped) {
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 3; c++) grid.appendChild(recipeSlot(it, r, c));
+    }
+  }
+
+  const ingRoot = ing.querySelector("[data-sub=ing-list]");
+  it.ingredients.forEach((rule, i) => ingRoot.appendChild(ingredientCard(it, rule, i)));
+
+  // Shaped recipes gain their ingredients through the slots, so the plain add
+  // button belongs to the shapeless list only.
+  const addBtn = ing.querySelector("[data-add-ing]");
+  const full = it.ingredients.length >= (isSmelt ? 1 : MAX_INGREDIENTS);
+  addBtn.style.display = shaped || full ? "none" : "";
+  addBtn.onclick = () => { it.ingredients.push(newIngredient("")); changed(true); };
+
+  ing.querySelectorAll("[data-sub=mode] button").forEach(button => {
+    button.onclick = () => setShapedMode(it, button.dataset.mode === "shaped");
+  });
+
+  // The process type lives in another section, so watch the whole form for a
+  // switch into or out of smelt and rebuild on the flip. The form element
+  // outlives its markup, so the previous rebuild's watcher comes off first.
+  if (smeltWatcher) root.removeEventListener("input", smeltWatcher);
+  smeltWatcher = () => {
+    if ((it.process.enabled && it.process.type === "smelt") !== isSmelt) changed(true);
+  };
+  root.addEventListener("input", smeltWatcher);
+  return ing;
+}
+
+function setShapedMode(it, shaped) {
+  if (shaped === !!it.shaped) return;
+  it.shaped = shaped;
+  // A shaped recipe needs a symbol on every ingredient (the plugin rejects it
+  // otherwise), so hand out the missing letters on the way in, and drop the
+  // pattern on the way out.
+  if (shaped) it.ingredients.forEach(rule => { if (!rule.symbol) rule.symbol = nextSymbol(it); });
+  else it.shape = ["", "", ""];
+  changed(true);
+}
+
+/** One cell of the shaped pattern: its ingredient, or a + that adds one. */
+function recipeSlot(it, r, c) {
+  const ch = shapeChar(it, r, c);
+  const rule = ch ? ingredientBySymbol(it, ch) : null;
+  const slot = document.createElement("button");
+  slot.type = "button";
+  slot.className = "recipe-slot" + (rule ? " filled" : ch ? " orphan" : "");
+  slot.title = rule ? `${ingredientLabel(rule)} (${ch})`
+    : ch ? `no ingredient uses symbol ${ch}` : "choose an ingredient";
+  if (rule) {
+    slot.appendChild(ingredientChip(rule, it.ingredients.indexOf(rule)));
+    const symbol = document.createElement("span");
+    symbol.className = "slot-symbol";
+    symbol.textContent = ch;
+    slot.appendChild(symbol);
+  } else {
+    slot.textContent = ch || "+";
+  }
+  slot.onclick = () => openSlotPicker(it, r, c);
+  return slot;
+}
+
+/**
+ * Slot picker: reuse an ingredient already in the recipe, define a new one,
+ * or empty the slot. Repeating one ingredient across slots is normal (three
+ * planks in a row), so the existing list comes first.
+ */
+function openSlotPicker(it, r, c) {
+  const current = shapeChar(it, r, c);
+  UI.modal({
+    title: `Slot row ${r + 1}, column ${c + 1}`,
+    build: (body, close) => {
+      if (it.ingredients.length) {
+        const hint = document.createElement("p");
+        hint.className = "hint";
+        hint.textContent = "Already in this recipe:";
+        const list = document.createElement("div");
+        list.className = "picker-list";
+        it.ingredients.forEach((rule, i) => {
+          const row = document.createElement("button");
+          row.type = "button";
+          row.className = "picker-row" + (rule.symbol && rule.symbol === current ? " on" : "");
+          row.appendChild(ingredientChip(rule, i));
+          row.appendChild(document.createTextNode(ingredientLabel(rule)));
+          const note = document.createElement("span");
+          note.className = "picker-note";
+          note.textContent = rule.symbol;
+          row.appendChild(note);
+          row.onclick = () => {
+            if (!rule.symbol) rule.symbol = nextSymbol(it);
+            setShapeChar(it, r, c, rule.symbol);
+            close();
+            changed(true);
+          };
+          list.appendChild(row);
+        });
+        body.appendChild(hint);
+        body.appendChild(list);
+      }
+
+      const draft = newIngredient("");
+      const form = document.createElement("div");
+      form.className = "form-grid";
+      form.innerHTML = `
+        <label>New ingredient <select data-n="kind">${kindOptions(draft.kind)}</select></label>
+        <label data-sub="value">${kindValueLabel(draft.kind)}
+          <input type="text" data-n="value" value="${esc(draft.value)}" spellcheck="false" data-keys="items"></label>`;
+      form.addEventListener("input", (e) => {
+        const f = e.target.dataset.n;
+        if (!f) return;
+        draft[f] = e.target.value;
+        if (f !== "kind") return;
+        const label = form.querySelector("[data-sub=value]");
+        const input = label.querySelector("input");
+        label.firstChild.nodeValue = kindValueLabel(draft.kind);
+        // Only vanilla materials have a key list to complete against.
+        if (draft.kind === "material") input.dataset.keys = "items";
+        else delete input.dataset.keys;
+      });
+      const addBtn = document.createElement("button");
+      addBtn.className = "add";
+      addBtn.textContent = "+ add to slot";
+      addBtn.onclick = () => {
+        draft.symbol = nextSymbol(it);
+        it.ingredients.push(draft);
+        setShapeChar(it, r, c, draft.symbol);
+        close();
+        changed(true);
+      };
+      if (it.ingredients.length >= MAX_INGREDIENTS) {
+        addBtn.disabled = true;
+        addBtn.textContent = "nine ingredients is the limit";
+      }
+      body.appendChild(form);
+      body.appendChild(addBtn);
+
+      if (current) {
+        const clear = document.createElement("button");
+        clear.className = "ghost";
+        clear.textContent = "Empty this slot";
+        clear.onclick = () => { setShapeChar(it, r, c, ""); close(); changed(true); };
+        body.appendChild(clear);
+      }
+    },
+  });
+}
+
 function ingredientCard(it, rule, i) {
   const card = document.createElement("div");
   card.className = "card";
+  // In a shaped recipe the pattern letter is assigned by the grid, not typed:
+  // the card only reports it, and says so when the letter sits in no slot.
+  const placement = !it.shaped ? ""
+    : `<span class="slot-symbol">${esc(rule.symbol || "?")}</span>`
+      + (isPlaced(it, rule.symbol) ? "" : `<span class="inline-note">not in the grid</span>`);
   card.innerHTML = `
-    <div class="card-head">
-      <select data-f="kind">
-        <option value="material" ${rule.kind === "material" ? "selected" : ""}>vanilla material</option>
-        <option value="item" ${rule.kind === "item" ? "selected" : ""}>consumable id</option>
-        <option value="seed" ${rule.kind === "seed" ? "selected" : ""}>crop seed</option>
-        <option value="tag" ${rule.kind === "tag" ? "selected" : ""}>group tag</option>
-      </select>
+    <div class="card-head recipe-ing-head">
+      <select data-f="kind">${kindOptions(rule.kind)}</select>
+      ${placement}
       <span class="grow"></span>
       <button class="danger" data-del>✕</button>
     </div>
     <div class="row">
-      <label>${rule.kind === "material" ? "material" : rule.kind === "tag" ? "group name (consumable_groups)" : rule.kind === "seed" ? "crop id (uses that crop's seed)" : "consumable id"}
+      <label>${kindValueLabel(rule.kind)}
         <input type="text" data-f="value" value="${esc(rule.value)}" spellcheck="false" ${rule.kind === "material" ? 'data-keys="items"' : ""}></label>
       <label>max units <input type="number" data-f="maxUnits" min="1" value="${rule.maxUnits}"></label>
     </div>
     <div class="row">
-      <label>symbol (shaped) <input type="text" data-f="symbol" maxlength="1" value="${esc(rule.symbol)}"></label>
       <label>addictiveness <input type="number" data-f="addictiveness" min="0" max="1" step="0.01" value="${rule.addictiveness}"></label>
     </div>
     <div data-sub="effects"></div>
@@ -738,12 +980,15 @@ function ingredientCard(it, rule, i) {
     if (!f) return;
     if (f === "kind") { rule.kind = e.target.value; changed(true); return; }
     if (f === "value") rule.value = e.target.value;
-    if (f === "symbol") rule.symbol = e.target.value.trim();
     if (f === "maxUnits") rule.maxUnits = Math.max(1, num(e.target.value, 1));
     if (f === "addictiveness") rule.addictiveness = clamp(num(e.target.value, 0), 0, 1);
     renderYAML(); renderPreview(); save();
   });
-  card.querySelector("[data-del]").onclick = () => { it.ingredients.splice(i, 1); changed(true); };
+  card.querySelector("[data-del]").onclick = () => {
+    clearSymbolCells(it, rule.symbol); // no ingredient left to hold its slots
+    it.ingredients.splice(i, 1);
+    changed(true);
+  };
   card.querySelector("[data-add-eff]").onclick = () => { rule.effects.push(defaultEffect()); changed(true); };
 
   const effRoot = card.querySelector("[data-sub=effects]");
@@ -783,6 +1028,15 @@ function ingredientCard(it, rule, i) {
 function isBlockModel(model) {
   const key = MCAssets.clean(model).toUpperCase();
   return MCKeys.BLOCKS.includes(key);
+}
+
+/** True when the model is a block whose item form is real geometry rather
+ *  than a flat sprite. Doors, rails, torches, crops and friends are blocks
+ *  but render as 2D item sprites in a slot, so they must not get the
+ *  isometric treatment. The shape resolves asynchronously; until it lands
+ *  a block keeps the 3D guess and the preview repaints on arrival. */
+function rendersAsGeometry(model) {
+  return isBlockModel(model) && MCAssets.itemShape(model) !== "flat";
 }
 
 function fillPoly(ctx, points, fill) {
@@ -851,7 +1105,7 @@ function paintPreviewModel(canvas, it) {
     }, fallback);
     return;
   }
-  if (isBlockModel(it.model)) {
+  if (rendersAsGeometry(it.model)) {
     const crop = MCAssets.cropState(it.model);
     if (crop) {
       drawIsoPlant(canvas, MCAssets.blockSprite(it.model), fallback);
@@ -924,7 +1178,7 @@ function renderPreview() {
   paintPreviewModel(root.querySelector(".big-tex"), it);
 }
 
-MCAssets.onReady(() => { paintModelChip(); renderPreview(); });
+MCAssets.onReady(() => { paintModelChip(); paintIngredientChips(); renderPreview(); });
 
 // ── YAML (matches ConsumableConfig parsing exactly) ────────────────────────
 
@@ -994,7 +1248,7 @@ function yamlOut() {
         const val = r.kind === "material" ? r.value.toUpperCase() : r.value;
         L.push(`      - ${key}: ${val}`);
         L.push(`        max_units: ${r.maxUnits}`);
-        if (r.symbol) L.push(`        symbol: ${q(r.symbol)}`);
+        if (it.shaped && r.symbol) L.push(`        symbol: ${q(r.symbol)}`);
         if (r.addictiveness > 0) L.push(`        addictiveness: ${r.addictiveness}`);
         if (r.effects.length) {
           L.push(`        effects:`);
@@ -1009,9 +1263,8 @@ function yamlOut() {
         }
       }
     }
-    const shapeRows = it.shape.map(r => (r || "").replace(/\s+$/, "")).filter((r, i, arr) =>
-      r.length || arr.slice(i + 1).some(x => x.trim().length));
-    if (shapeRows.some(r => r.trim().length)) {
+    const shapeRows = shapeRowsForYaml(it);
+    if (shapeRows.length) {
       L.push(`    shape:`);
       for (const row of shapeRows) L.push(`      - ${q(row)}`);
     }

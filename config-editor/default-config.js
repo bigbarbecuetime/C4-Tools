@@ -142,6 +142,22 @@ mcmmo:
   default_herbalism_xp: 50           # XP per harvest for crops that don't set their own
   herbalism_double_drop_chance: 1.0  # max double-drop chance, reached at Herbalism level 1000
 
+# ____________________ Land protection ____________________
+
+# Optional land-claim support. This only runs when a supported plugin is
+# installed. C4 crops are display entities and C4 stations are custom heads, so
+# they never fire the block events these plugins normally guard - C4 asks them
+# directly instead, at the same block location.
+#
+# With more than one provider installed, an action needs every one of them to
+# allow it, and only the first to object explains why.
+land-protection:
+  enabled: true            # master switch for every provider below
+  factionsuuid:
+    enabled: true          # honour FactionsUUID territory permissions
+  townclaim:
+    enabled: true          # honour TownClaim town, plot, and nation permissions
+
 # ____________________ Visuals ____________________
 
 # Visual identity for crafted items and processes.
@@ -153,12 +169,12 @@ visuals:
 
 # The wireframe shown when a player looks at a custom crop: the hitbox box is drawn
 # as 12 thin bars (edges only, no interior). 'block' is the bar block, 'thickness'
-# is the bar width in blocks (0.005-0.5). 'glow' toggles the glowing outline (see
+# is the bar width in blocks (0.001-0.5). 'glow' toggles the glowing outline (see
 # through walls); with it off the bars are just the plain block. 'glow_color' is a
 # name (BLACK, WHITE, RED, GREEN, BLUE, YELLOW, AQUA, ORANGE, PURPLE) or #RRGGBB.
 crop_highlight:
   block: BLACK_STAINED_GLASS
-  thickness: 0.04
+  thickness: 0.001
   glow: false
   glow_color: BLACK
 

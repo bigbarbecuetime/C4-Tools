@@ -8,6 +8,7 @@
  * API:
  *   MCAssets.item(name)              -> canvas|null   (item model texture)
  *   MCAssets.block(name, face)       -> canvas|null   (face: top|side|bottom)
+ *   MCAssets.itemShape(name)         -> "flat"|"3d"|null (how a slot renders it)
  *   MCAssets.onReady(cb)             -> cb() fires whenever a texture arrives
  *   MCAssets.colorFor(name)          -> fallback CSS color
  */
@@ -40,6 +41,9 @@ const MCAssets = (() => {
     lily_pad: "#208030", melon_stem: "#5ca328", pumpkin_stem: "#5ca328",
     attached_melon_stem: "#5ca328", attached_pumpkin_stem: "#5ca328",
     grass_block_top: "#7cbd6b", sugar_cane: "#7cbd6b",
+    // Water ships grayscale too and is tinted per biome; #3f76e4 is the
+    // default most biomes use. Lava is already coloured and takes no tint.
+    water: "#3f76e4", water_still: "#3f76e4", water_flow: "#3f76e4",
   };
 
   const COLOR_KEYWORDS = [
@@ -606,6 +610,45 @@ const MCAssets = (() => {
     return null;
   }
 
+  // ── item render shape (flat sprite vs 3D model) ───────────────────────────
+
+  const shapeCache = new Map(); // item name -> "flat" | "3d" | "pending"
+
+  /**
+   * How vanilla renders an item in a slot: "flat" for a 2D sprite, "3d" for
+   * real geometry, or null while the model loads.
+   *
+   * An item is flat when its model inherits item/generated (or item/handheld,
+   * which itself inherits it) - doors, rails, torches, crops and the rest of
+   * the flat-sprite block items all do. Block items that simply reuse the
+   * block model, and entity models like chests and beds, do not. Since 1.21.4
+   * a plain block item has no models/item/<name>.json at all, so a miss down
+   * the whole version cascade also means "3d".
+   */
+  function itemShape(name) {
+    const n = clean(name);
+    if (!n) return null;
+    const cached = shapeCache.get(n);
+    if (cached && cached !== "pending") return cached;
+    if (cached) return null;
+    shapeCache.set(n, "pending");
+    (async () => {
+      let m = await fetchModelJson(`item/${n}.json`);
+      let shape = "3d";
+      for (let hops = 0; m && hops < 8; hops++) {
+        const parent = m.parent && clean(m.parent); // keeps its folder
+        if (!parent) break;
+        if (parent === "item/generated" || parent === "item/handheld"
+          || parent === "builtin/generated") { shape = "flat"; break; }
+        if (parent.startsWith("builtin")) break;
+        m = await fetchModelJson(`${parent}.json`);
+      }
+      shapeCache.set(n, shape);
+      notify();
+    })();
+    return null;
+  }
+
   /** Texture canvas for a model face ref ("#side", "side", or a direct path),
    *  or null. Some vanilla files omit the "#", so any ref naming a texture
    *  key resolves as a variable. */
@@ -699,5 +742,5 @@ const MCAssets = (() => {
     return loadFirst(`block:${n}:${face}`, candidates, tintName);
   }
 
-  return { item, block, blockSprite, blockModel, modelTexture, cropState, stateVariants, headCube, headFace, edgeRuns, onReady, colorFor, clean };
+  return { item, itemShape, block, blockSprite, blockModel, modelTexture, cropState, stateVariants, headCube, headFace, edgeRuns, onReady, colorFor, clean };
 })();

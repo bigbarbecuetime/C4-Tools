@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Farmland Designer</title>
 <link rel="icon" type="image/png" href="../shared/c4-mark.png?v=4">
-<link rel="stylesheet" href="../shared/common.css?v=30">
+<link rel="stylesheet" href="../shared/common.css?v=34">
 </head>
 <body data-screen="outline">
 <div class="app">
@@ -35,7 +35,7 @@
       <hr>
       <button class="row-nav on" data-pane-target="identity">Identity</button>
       <button class="row-nav" data-pane-target="tilling">Tilling</button>
-      <button class="row-nav" data-pane-target="water" data-pane-title="Water model">Water model</button>
+      <button class="row-nav" data-pane-target="water" data-pane-title="Water model">Hydration Model</button>
     </nav>
     <div class="ofoot">
       <button data-main="preview" class="on">Preview</button>
@@ -114,7 +114,10 @@
 
       <section class="pane" data-pane="water" hidden>
         <div class="form-grid">
-          <label>Hydration source block <input id="fl-source" type="text" spellcheck="false" placeholder="WATER" data-keys="hydration"></label>
+          <label>Hydration source block <select id="fl-source" data-keys="hydration">
+            <option value="WATER">WATER</option>
+            <option value="LAVA">LAVA</option>
+          </select></label>
           <label>Hydration radius <input id="fl-radius" type="number" min="1" max="8" step="1" data-range data-cells="8"></label>
           <label>Default biome baseline <input id="fl-baseline" type="number" min="0" max="1" step="0.05" data-range></label>
           <label>Dry rate per minute <input id="fl-dryrate" type="number" min="0" step="0.01"></label>
@@ -143,8 +146,8 @@
   <button data-screen="detail">Edit</button>
 </nav>
 
-<script src="../shared/ui.js?v=16"></script>
-<script src="../shared/mc-assets.js?v=6"></script>
+<script src="../shared/ui.js?v=18"></script>
+<script src="../shared/mc-assets.js?v=7"></script>
 <script src="../shared/yaml-lite.js?v=3"></script>
 <script src="../shared/mc-keys.js?v=6"></script>
 <script src="../shared/key-picker.js?v=4"></script>
