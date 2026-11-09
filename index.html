@@ -5,13 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>C4 Config Tools</title>
 <link rel="icon" type="image/png" href="shared/c4-mark.png?v=4">
-<link rel="stylesheet" href="shared/common.css?v=34">
+<script src="shared/theme-boot.js?v=1"></script>
+<link rel="stylesheet" href="shared/common.css?v=40">
 </head>
 <body class="scrolls">
-<header>
+<header class="appbar">
   <span class="mark" data-logo></span>
   <h1>C4</h1>
   <span class="sub">Config Tools</span>
+  <nav class="suite">
+    <a href="crop-designer/index.html">crops</a>
+    <a href="farmland-designer/index.html">farmland</a>
+    <a href="consumable-designer/index.html">consumables</a>
+    <a href="head-painter/index.html">heads</a>
+    <a href="config-editor/index.html">config</a>
+  </nav>
   <div class="header-actions">
     <button class="tbtn" data-theme-toggle title="Light / dark"></button>
   </div>
@@ -21,35 +29,35 @@
   <div class="hero">
     <span class="mark" data-logo></span>
     <p class="tagline">Crops · Consumables · Cooking · Crafting</p>
-    <p class="sub">Tools for building the plugin's YAML config files.
-      Each tool generates files you drop into <code>plugins/C4/&lt;folder&gt;/</code>.</p>
+    <p class="sub">Tools for building and working with the C4's config files.</p>
+    <p class="sub">Config files go in <code>plugins/C4/&lt;folder&gt;/</code>.</p>
   </div>
 
   <div class="tools-grid">
     <a class="tool-card" href="crop-designer/index.html">
       <h3>Crop Designer</h3>
-      <p>Build crop stages with items, blocks, and player heads. Export crop files for <code>farming/</code>.</p>
+      <p>Design and build new crops. Exports crop files for <code>farming/</code>.</p>
     </a>
     <a class="tool-card" href="farmland-designer/index.html">
       <h3>Farmland Designer</h3>
-      <p>Create farmland and choose how it gets water. Export files for <code>farming/farmland/</code>.</p>
+      <p>Create and configure new farmlands. Exports files for <code>farming/farmland/</code>.</p>
     </a>
     <a class="tool-card" href="consumable-designer/index.html">
       <h3>Consumable Designer</h3>
-      <p>Create food, effects, recipes, preparation steps, and addictions. Export files for <code>consumables/</code>.</p>
+      <p>Create food, effects, recipes, preparation steps, and "substances". Exports files for <code>consumables/</code>.</p>
     </a>
     <a class="tool-card" href="head-painter/index.html">
       <h3>Head Painter</h3>
-      <p>Paint a player head or edit an existing texture. Copy the finished texture value.</p>
+      <p>Paint a player head or edit an existing head texture.</p>
     </a>
     <a class="tool-card" href="config-editor/index.html">
       <h3>Config Editor</h3>
-      <p>Edit the main settings, groups, visuals, and vanilla crops. Export <code>config.yml</code>.</p>
+      <p>Edit the main settings, groups, visuals, and vanilla crops. Exports <code>config.yml</code>.</p>
     </a>
   </div>
 </div>
 
-<script src="shared/ui.js?v=18"></script>
+<script src="shared/ui.js?v=20"></script>
 <script>UI.initShell();</script>
 </body>
 </html>

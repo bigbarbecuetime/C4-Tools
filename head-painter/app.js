@@ -39,10 +39,25 @@
   ];
   const NET_COLS = 4, NET_ROWS = 3;
 
+  /** The same six faces as a cube: for each, the corner at texel (0,0) and the
+   *  corners one full face along u and along v, at half-size h. The preview
+   *  draws from this, and the mirrors are derived from it. */
+  const CUBE_FACES = [
+    { face: "front", n: [0, 0, 1], c: (h) => [[-h, h, h], [h, h, h], [-h, -h, h]] },
+    { face: "back", n: [0, 0, -1], c: (h) => [[h, h, -h], [-h, h, -h], [h, -h, -h]] },
+    { face: "right", n: [-1, 0, 0], c: (h) => [[-h, h, -h], [-h, h, h], [-h, -h, -h]] },
+    { face: "left", n: [1, 0, 0], c: (h) => [[h, h, h], [h, h, -h], [h, -h, h]] },
+    { face: "top", n: [0, 1, 0], c: (h) => [[-h, h, -h], [h, h, -h], [-h, h, h]] },
+    { face: "bottom", n: [0, -1, 0], c: (h) => [[-h, -h, h], [h, -h, h], [-h, -h, -h]] },
+  ];
+
   const MINESKIN_API = "https://api.mineskin.org/v2";
   const USER_AGENT = "C4-HeadPainter/1.0";
   const TEXTURE_HOST = "http://textures.minecraft.net/texture/";
   const DEFAULT_COLOR = "#8B8B8B";
+  /** What erasing on the base layer writes: opaque black, matching the pixel an
+   *  empty overlay texel becomes when the overlay is copied down. */
+  const BASE_ERASE_RGBA = [0, 0, 0, 255];
   const UNDO_LIMIT = 80;
   const STORE = { key: "c4.headpainter.key", skin: "c4.headpainter.skin", meta: "c4.headpainter.meta" };
 
@@ -60,7 +75,7 @@
     alpha: 255,
     zoom: 16,
     grid: true,
-    mirror: false,
+    mirror: { x: false, y: false, z: false },
     hatVisible: true,
     recent: [],
     // Positive pitch tips the top toward the camera, so the head opens at a
@@ -84,14 +99,43 @@
     return [x + (layer === "hat" ? HAT_DX : 0), y];
   }
 
+  // Face labels are drawn into the canvas, but the canvas is capped to its
+  // column by CSS, so a zoomed-in net is drawn big and then shrunk on screen.
+  // Sizing the font in canvas pixels would therefore make the labels shrink
+  // as you zoom in and loom over the faces as you zoom out; dividing by that
+  // scale holds them at one readable size throughout.
+  const LABEL_PX = 11;      // what a label measures on screen
+  const LABEL_GAP = 5;      // space between a label's baseline and its face
+  const LABEL_EM = 0.6;     // width of one monospace character, in em
+
+  /** How much the browser shrinks the canvas to fit its wrapper (<= 1). */
+  function netShrink(width, height) {
+    const wrap = netCanvas.parentElement;
+    if (!wrap || !wrap.clientWidth || !wrap.clientHeight) return 1;
+    return Math.min(1, wrap.clientWidth / width, wrap.clientHeight / height);
+  }
+
   /** Layout of the net canvas at the current zoom, in canvas pixels. */
   function netLayout() {
     const z = state.zoom;
     const cell = FACE * z;
-    const gap = Math.max(10, Math.round(z * 0.9));
-    const padX = 8, padTop = 16, padBottom = 8;
+    const padX = 8, padBottom = 8;
+    const baseGap = Math.max(10, Math.round(z * 0.9));
+    const widest = Math.floor(cell / ("bottom".length * LABEL_EM));
+    // Every label but the top row's is drawn in the gap above its face, so the
+    // gap has to hold the label - and widening it changes the shrink that
+    // sized the label in the first place. Two passes settle that.
+    let gap = baseGap, label = LABEL_PX;
+    for (let pass = 0; pass < 2; pass++) {
+      const w = NET_COLS * cell + (NET_COLS - 1) * gap + padX * 2;
+      const h = NET_ROWS * cell + (NET_ROWS - 1) * gap + label + LABEL_GAP + padBottom;
+      const shrink = netShrink(w, h);
+      label = clamp(Math.round(LABEL_PX / shrink), LABEL_PX, Math.max(LABEL_PX, widest));
+      gap = Math.max(baseGap, label + LABEL_GAP);
+    }
+    const padTop = label + LABEL_GAP;
     return {
-      z, cell, gap, padX, padTop,
+      z, cell, gap, padX, padTop, label,
       width: NET_COLS * cell + (NET_COLS - 1) * gap + padX * 2,
       height: NET_ROWS * cell + (NET_ROWS - 1) * gap + padTop + padBottom,
       cellX: (col) => padX + col * (cell + gap),
@@ -168,6 +212,96 @@
     return true;
   }
 
+  // ── mirrors ──────────────────────────────────────────────────────────────
+  //
+  // Each axis is a mirror plane through the middle of the head, not a pairing
+  // of faces: a texel is reflected across the plane and its partner is whatever
+  // texel sits at that point, on the opposite face where the plane separates
+  // two (X: right/left) and on the same face where it cuts through one (X on
+  // the top face). Deriving that from CUBE_FACES, the same geometry the 3D
+  // preview draws, keeps the two consistent and needs no mapping table: place
+  // a texel in space, negate one axis, look up what is there.
+
+  const AXES = ["x", "y", "z"];
+  const CUBE_H = 4; // half the head, in the preview's units
+
+  /** Center of texel (lx,ly) on a face, in cube space. */
+  function texelPoint(face, lx, ly) {
+    const [p0, pu, pv] = CUBE_FACES.find((f) => f.face === face).c(CUBE_H);
+    const u = (lx + 0.5) / FACE, v = (ly + 0.5) / FACE;
+    return [0, 1, 2].map((i) => p0[i] + u * (pu[i] - p0[i]) + v * (pv[i] - p0[i]));
+  }
+
+  /** [lx,ly] of the texel a cube-space point lands on, or null if not on this face. */
+  function texelAt(face, q) {
+    const [p0, pu, pv] = CUBE_FACES.find((f) => f.face === face).c(CUBE_H);
+    const du = pu.map((n, i) => n - p0[i]);
+    const dv = pv.map((n, i) => n - p0[i]);
+    const d = q.map((n, i) => n - p0[i]);
+    const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const a = dot(d, du) / dot(du, du);
+    const b = dot(d, dv) / dot(dv, dv);
+    if (a <= 0 || a >= 1 || b <= 0 || b >= 1) return null;
+    // Rejects the four faces the point is merely near: it must lie in the plane.
+    for (let i = 0; i < 3; i++) {
+      if (Math.abs(p0[i] + a * du[i] + b * dv[i] - q[i]) > 1e-6) return null;
+    }
+    return [Math.floor(a * FACE), Math.floor(b * FACE)];
+  }
+
+  /** axis -> Map of "face,lx,ly" -> [face, lx, ly] on the far side. */
+  const MIRROR = (() => {
+    const maps = { x: new Map(), y: new Map(), z: new Map() };
+    for (const { face } of CUBE_FACES) {
+      for (let ly = 0; ly < FACE; ly++) {
+        for (let lx = 0; lx < FACE; lx++) {
+          const p = texelPoint(face, lx, ly);
+          AXES.forEach((axis, ai) => {
+            const q = p.slice();
+            q[ai] = -q[ai];
+            for (const other of CUBE_FACES) {
+              const t = texelAt(other.face, q);
+              if (t) { maps[axis].set(`${face},${lx},${ly}`, [other.face, t[0], t[1]]); break; }
+            }
+          });
+        }
+      }
+    }
+    return maps;
+  })();
+
+  /** The texel painted, plus a partner for every enabled axis (up to eight). */
+  function mirrorTargets(face, lx, ly) {
+    let out = [[face, lx, ly]];
+    for (const axis of AXES) {
+      if (!state.mirror[axis]) continue;
+      const all = new Map(out.map((t) => [t.join(","), t]));
+      for (const t of out) {
+        const partner = MIRROR[axis].get(t.join(","));
+        if (partner) all.set(partner.join(","), partner);
+      }
+      out = [...all.values()];
+    }
+    return out;
+  }
+
+  /**
+   * Replaces one layer's six faces with a copy of the other's. A copy into the
+   * base comes out opaque: that layer has no transparency, so every pixel's
+   * alpha is forced to 255 on the way in.
+   */
+  function copyLayer(from, to) {
+    for (const face of Object.keys(FACE_UV)) {
+      const [sx, sy] = faceOrigin(face, from);
+      const [dx, dy] = faceOrigin(face, to);
+      const img = sctx.getImageData(sx, sy, FACE, FACE);
+      if (to === "base") {
+        for (let i = 3; i < img.data.length; i += 4) img.data[i] = 255;
+      }
+      sctx.putImageData(img, dx, dy);
+    }
+  }
+
   // ── painting ─────────────────────────────────────────────────────────────
 
   /** Effective tool for this event: Alt picks, Ctrl and right-click erase. */
@@ -177,8 +311,12 @@
     return state.tool;
   }
 
+  /** The base layer has no transparency, so erasing there blanks to opaque
+   *  black rather than punching a hole the head shows through. */
   function currentRgba(tool) {
-    if (tool === "eraser") return [0, 0, 0, 0];
+    if (tool === "eraser") {
+      return state.layer === "base" ? BASE_ERASE_RGBA.slice() : [0, 0, 0, 0];
+    }
     return [state.color[0], state.color[1], state.color[2], state.alpha];
   }
 
@@ -191,9 +329,9 @@
     }
     const rgba = currentRgba(tool);
     const paint = tool === "fill" ? floodFill : writePixel;
-    let changed = paint(hit.face, state.layer, hit.lx, hit.ly, rgba);
-    if (state.mirror) {
-      changed = paint(hit.face, state.layer, FACE - 1 - hit.lx, hit.ly, rgba) || changed;
+    let changed = false;
+    for (const [face, lx, ly] of mirrorTargets(hit.face, hit.lx, hit.ly)) {
+      changed = paint(face, state.layer, lx, ly, rgba) || changed;
     }
     if (tool !== "eraser") rememberColor(rgba);
     return changed;
@@ -260,9 +398,17 @@
   netCanvas.addEventListener("pointercancel", endStroke);
   netCanvas.addEventListener("pointerleave", () => showReadout(null));
 
+  window.addEventListener("resize", () => drawNet());
+
+  netCanvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    state.zoom = clamp(state.zoom + (e.deltaY > 0 ? -2 : 2), 6, 28);
+    drawNet();
+  }, { passive: false });
+
   function showReadout(hit) {
     const el = $("net-readout");
-    if (!hit) { el.innerHTML = "&nbsp;"; return; }
+    if (!hit) { el.textContent = "scroll to zoom"; return; }
     const p = readPixel(hit.face, state.layer, hit.lx, hit.ly);
     const swatch = p[3] === 0 ? "empty" : `${hex(p[0], p[1], p[2])}${p[3] < 255 ? " a" + p[3] : ""}`;
     el.textContent = `${hit.face} · ${hit.lx},${hit.ly} · ${state.layer} · ${swatch}`;
@@ -376,9 +522,9 @@
       nctx.strokeRect(x - 0.5, y - 0.5, L.cell + 1, L.cell + 1);
 
       nctx.fillStyle = theme.muted;
-      nctx.font = '11px Consolas, monospace';
+      nctx.font = `${L.label}px Consolas, monospace`;
       nctx.textAlign = "left";
-      nctx.fillText(c.face, x, y - 4);
+      nctx.fillText(c.face, x, y - Math.round(L.label * 0.36));
     }
   }
 
@@ -401,14 +547,6 @@
   /** Corner picks for a face: [origin(u0,v0), u-axis end, v-axis end], and the
    *  outward normal. h is the half-size of the cube.
    *  +X right, +Y up, +Z toward the viewer; the head's face looks down +Z. */
-  const CUBE_FACES = [
-    { face: "front", n: [0, 0, 1], c: (h) => [[-h, h, h], [h, h, h], [-h, -h, h]] },
-    { face: "back", n: [0, 0, -1], c: (h) => [[h, h, -h], [-h, h, -h], [h, -h, -h]] },
-    { face: "right", n: [-1, 0, 0], c: (h) => [[-h, h, -h], [-h, h, h], [-h, -h, -h]] },
-    { face: "left", n: [1, 0, 0], c: (h) => [[h, h, h], [h, h, -h], [h, -h, h]] },
-    { face: "top", n: [0, 1, 0], c: (h) => [[-h, h, -h], [h, h, -h], [-h, h, h]] },
-    { face: "bottom", n: [0, -1, 0], c: (h) => [[-h, -h, h], [h, -h, h], [-h, -h, -h]] },
-  ];
   const SHADE = { top: 1, front: 0.86, back: 0.86, left: 0.72, right: 0.72, bottom: 0.58 };
 
   /** An 8x8 face lifted out of the skin, multiplied by its lighting factor.
@@ -545,10 +683,11 @@
   function setColor(rgb, alpha) {
     state.color = rgb;
     if (alpha !== undefined) {
-      state.alpha = alpha;
+      // The base layer has no alpha control, so it can only ever paint solid.
+      state.alpha = state.layer === "base" ? 255 : alpha;
+      alpha = state.alpha;
       $("alpha-slider").value = String(alpha);
-      $("alpha-label").textContent = String(alpha);
-      $("alpha-hint").style.display = alpha < 255 ? "" : "none";
+      UI.refresh(); // repaint the meter track behind the new value
     }
     const h = hex(rgb[0], rgb[1], rgb[2]);
     $("color-swatch").value = h.toLowerCase();
@@ -585,15 +724,14 @@
       const d = sctx.getImageData(ox, oy, FACE, FACE).data;
       for (let i = 3; i < d.length; i += 4) if (d[i] !== 255) soft++;
     }
+    // Nothing to say while the base is solid, which is the normal state; the
+    // section appears only when transparent pixels need dealing with.
+    $("opacity-warning").hidden = soft === 0;
+    if (soft === 0) return;
     const el = $("opacity-note");
-    if (soft === 0) {
-      el.textContent = "All base pixels are opaque.";
-      el.style.color = "";
-    } else {
-      el.textContent = `${soft} base pixel${soft === 1 ? " is" : "s are"} transparent. `
-        + "The head will show through in game. Paint them solid or move them to the overlay.";
-      el.style.color = "var(--warn)";
-    }
+    el.textContent = `${soft} base pixel${soft === 1 ? " is" : "s are"} transparent. `
+      + "The head will show through in game. Paint them solid or move them to the overlay.";
+    el.style.color = "var(--warn)";
   }
 
   // ── loading a texture value ──────────────────────────────────────────────
@@ -894,7 +1032,60 @@
     if (!btn) return;
     state.layer = btn.dataset.layer;
     for (const b of $("layer-grid").children) b.classList.toggle("active", b === btn);
+    syncLayerControls();
     drawNet();
+  });
+
+  /** Alpha belongs to the overlay: the base is opaque, so hide the slider. */
+  function syncLayerControls() {
+    $("alpha-row").hidden = state.layer === "base";
+    if (state.layer === "base") setColor(state.color, 255);
+  }
+
+  $("mirror-grid").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-axis]");
+    if (!btn) return;
+    const axis = btn.dataset.axis;
+    state.mirror[axis] = !state.mirror[axis];
+    btn.classList.toggle("active", state.mirror[axis]);
+  });
+
+  // Copying a layer overwrites all 384 of the other's pixels, so it asks first.
+  $("copy-grid").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-copy]");
+    if (!btn) return;
+    const [from, to] = btn.dataset.copy === "base-to-hat" ? ["base", "hat"] : ["hat", "base"];
+    const name = (layer) => (layer === "base" ? "base" : "overlay");
+    UI.modal({
+      title: `Copy ${name(from)} to ${name(to)}?`,
+      build: (body, close) => {
+        const note = document.createElement("p");
+        note.className = "hint";
+        note.textContent = `This replaces every pixel of the ${name(to)} layer with the `
+          + `${name(from)} layer's.`;
+        const row = document.createElement("div");
+        row.className = "tool-grid two";
+        const cancel = document.createElement("button");
+        cancel.className = "ghost";
+        cancel.textContent = "Cancel";
+        cancel.onclick = close;
+        const go = document.createElement("button");
+        go.className = "go";
+        go.textContent = `Copy to ${name(to)}`;
+        go.onclick = () => {
+          copyLayer(from, to);
+          close();
+          commit();
+          repaint();
+          persist();
+          refreshOpacityNote();
+          status(`copied the ${name(from)} layer onto the ${name(to)}`, "");
+        };
+        row.append(cancel, go);
+        body.append(note, row);
+        go.focus();
+      },
+    });
   });
 
   $("color-swatch").addEventListener("input", (e) => {
@@ -911,14 +1102,8 @@
 
   $("alpha-slider").addEventListener("input", (e) => setColor(state.color, Number(e.target.value)));
 
-  $("opt-mirror").addEventListener("change", (e) => { state.mirror = e.target.checked; });
   $("opt-grid").addEventListener("change", (e) => { state.grid = e.target.checked; drawNet(); });
   $("opt-hat-visible").addEventListener("change", (e) => { state.hatVisible = e.target.checked; drawPreview(); });
-  $("zoom-slider").addEventListener("input", (e) => {
-    state.zoom = Number(e.target.value);
-    $("zoom-label").textContent = `${state.zoom}x`;
-    drawNet();
-  });
 
   $("btn-undo").addEventListener("click", doUndo);
   $("btn-redo").addEventListener("click", doRedo);
@@ -982,6 +1167,7 @@
   resetSkin();
   resetHistory();
   setColor(state.color, state.alpha);
+  syncLayerControls();
   drawPalette();
   restore();
   repaint();

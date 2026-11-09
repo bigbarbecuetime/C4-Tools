@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Head Painter</title>
 <link rel="icon" type="image/png" href="../shared/c4-mark.png?v=4">
-<link rel="stylesheet" href="../shared/common.css?v=34">
-<link rel="stylesheet" href="style.css?v=4">
+<script src="../shared/theme-boot.js?v=1"></script>
+<link rel="stylesheet" href="../shared/common.css?v=41">
+<link rel="stylesheet" href="style.css?v=8">
 </head>
 <body data-screen="outline">
 <div class="app">
@@ -34,22 +35,26 @@
     <h2>Tool</h2>
     <div class="tool-grid" id="tool-grid">
       <button data-tool="pencil" class="active" title="Paint one pixel (drag to draw)">Pencil</button>
-      <button data-tool="eraser" title="Clear pixels to transparent">Eraser</button>
+      <button data-tool="eraser" title="Clear pixels">Eraser</button>
       <button data-tool="fill" title="Flood fill the matching region, bounded to one face">Fill</button>
       <button data-tool="picker" title="Pick the color under the cursor (Alt held = temporary picker)">Pick color</button>
     </div>
     <p class="hint">Hold <code>Alt</code> with any tool to pick a color, and
-    <code>Ctrl</code> to erase. Right-click erases too.</p>
+    <code>Ctrl</code>/<code>Right Click</code> to erase.</p>
+    <h3 class="sub">Mirror</h3>
+    <div class="tool-grid three" id="mirror-grid">
+      <button data-axis="x">X</button>
+      <button data-axis="y">Y</button>
+      <button data-axis="z">Z</button>
+    </div>
 
     <h2>Color</h2>
     <div class="color-row">
       <input id="color-swatch" type="color" value="#8b8b8b">
       <input id="color-hex" type="text" spellcheck="false" value="#8B8B8B">
     </div>
-    <label class="slider">Alpha <input id="alpha-slider" type="range" min="0" max="255" value="255">
-      <span id="alpha-label" class="mono">255</span></label>
-    <p class="hint alpha-warning" id="alpha-hint">
-      Partly transparent. Fine on the overlay; the base layer should stay opaque.</p>
+    <label id="alpha-row">Alpha
+      <input id="alpha-slider" type="number" min="0" max="255" step="1" value="255" data-range></label>
     <h3 class="sub">Recent</h3>
     <div class="palette" id="palette"></div>
 
@@ -58,14 +63,17 @@
       <button data-layer="base" class="active" title="The head itself">base</button>
       <button data-layer="hat" title="The 1.125x outer shell drawn over the head">overlay</button>
     </div>
+    <div class="tool-grid two" id="copy-grid">
+      <button data-copy="base-to-hat" title="Replace every overlay pixel with the base layer's">copy base → overlay</button>
+      <button data-copy="hat-to-base" title="Replace every base pixel with the overlay layer's">copy overlay → base</button>
+    </div>
     <label class="check"><input id="opt-hat-visible" type="checkbox" checked> Show overlay in the 3D preview</label>
-    <label class="check"><input id="opt-mirror" type="checkbox"> Mirror X (paint both halves of a face)</label>
     <label class="check"><input id="opt-grid" type="checkbox" checked> Pixel grid</label>
-    <label class="slider">Zoom <input id="zoom-slider" type="range" min="6" max="28" value="16">
-      <span id="zoom-label" class="mono">16x</span></label>
 
-    <h2>Base layer</h2>
-    <p class="hint" id="opacity-note">All base pixels are opaque.</p>
+    <div id="opacity-warning" hidden>
+      <h2>Base layer</h2>
+      <p class="hint" id="opacity-note"></p>
+    </div>
     </div>
   </section>
 
@@ -75,7 +83,7 @@
     <div class="net-wrap">
       <canvas id="net" width="512" height="384"></canvas>
     </div>
-    <span class="hint" id="net-readout">&nbsp;</span>
+    <span class="hint" id="net-readout">scroll to zoom</span>
 
     <div class="preview-wrap">
       <canvas id="preview" width="360" height="300"></canvas>
@@ -135,10 +143,6 @@
         </select></label>
       <label>MineSkin API key (optional)
         <input id="ms-key" type="text" spellcheck="false" placeholder="left blank = free tier"></label>
-      <p class="hint">Kept in this browser only (<code>localStorage</code>), never sent
-      anywhere but MineSkin. Without a key you share the free tier's limit of about 20
-      skins per minute. Keys come from
-      <a href="https://account.mineskin.org/keys" target="_blank" rel="noopener">account.mineskin.org</a>.</p>
     </div>
     <div class="btn-row">
       <button id="btn-generate" class="primary">generate value</button>
@@ -179,8 +183,8 @@
   <button data-screen="detail">Value</button>
 </nav>
 
-<script src="../shared/ui.js?v=18"></script>
-<script src="app.js?v=9"></script>
+<script src="../shared/ui.js?v=20"></script>
+<script src="app.js?v=18"></script>
 <script>UI.initShell({ pane: "load" });</script>
 </body>
 </html>

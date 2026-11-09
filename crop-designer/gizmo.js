@@ -1,7 +1,7 @@
 /* gizmo.js - move / scale / rotate handles for the crop preview.
  *
  * Loaded after app.js. Classic scripts share one global lexical scope, so the
- * top-level bindings in app.js (state, project, draw, canvas, ctx, setStage,
+ * top-level bindings in app.js (state, project, draw, canvas, previewGL, setStage,
  * changed, save, clamp, esc) are visible here, and the function declarations
  * draw/setStage can be wrapped.
  *
@@ -195,57 +195,38 @@
 
   // ── draw the handles over the finished scene ──────────────────────────
   let drag = null;
-  const baseDraw = draw;
-  draw = function () {
-    baseDraw.apply(this, arguments);
+  function drawGizmo() {
     if (state.view.mode !== "stages") return;
     const o = originOf();
     if (!o) return;
     const els = selElements();
-    ctx.save();
     // Ring each selected element so a multi-selection is legible.
     if (els.length > 1) {
-      ctx.strokeStyle = "rgba(255,255,255,.55)";
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([3, 3]);
       for (const e of els) {
         const p = project(e.translation);
-        ctx.beginPath(); ctx.arc(p.x, p.y, 7, 0, Math.PI * 2); ctx.stroke();
+        previewGL.circle(p.x, p.y, 7, "rgba(255,255,255,.55)",
+          { stroke: true, width: 1.5, dash: true });
       }
-      ctx.setLineDash([]);
     }
     const c = project(o);
-    ctx.lineWidth = 2.5;
-    ctx.font = "600 11px system-ui, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
     for (const a of AXES) {
       const p = handlePos(o, a.vec);
-      ctx.globalAlpha = drag && drag.axis.k !== a.k ? 0.25 : 1;
-      ctx.strokeStyle = a.color;
-      ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(p.x, p.y); ctx.stroke();
-      ctx.fillStyle = a.color;
-      ctx.beginPath();
-      if (state.view.tool === "scale") ctx.rect(p.x - 4.5, p.y - 4.5, 9, 9);
-      else ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-      ctx.fill();
+      const alpha = drag && drag.axis.k !== a.k ? 0.25 : 1;
+      previewGL.line(c.x, c.y, p.x, p.y, a.color, 2.5, alpha);
+      if (state.view.tool === "scale") previewGL.rect(p.x - 4.5, p.y - 4.5, 9, 9, a.color, 0, alpha);
+      else previewGL.circle(p.x, p.y, 5, a.color, { alpha });
       if (state.view.tool === "rotate") {
-        ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.arc(p.x, p.y, 8, 0, Math.PI * 1.5); ctx.stroke();
-        ctx.lineWidth = 2.5;
+        previewGL.circle(p.x, p.y, 8, "#fff",
+          { stroke: true, width: 1.5, start: 0, end: Math.PI * 1.5, alpha });
       }
-      ctx.fillStyle = "#fff";
-      ctx.strokeStyle = "rgba(0,0,0,.65)";
-      ctx.lineWidth = 3;
-      ctx.strokeText(a.name, p.x, p.y - 13);
-      ctx.fillText(a.name, p.x, p.y - 13);
-      ctx.lineWidth = 2.5;
+      previewGL.text(a.name, p.x, p.y - 13, {
+        font: "600 11px system-ui, sans-serif", fill: "#fff",
+        stroke: "rgba(0,0,0,.65)", strokeWidth: 3, alpha,
+      });
     }
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = "#fff";
-    ctx.beginPath(); ctx.arc(c.x, c.y, 3, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-  };
+    previewGL.circle(c.x, c.y, 3, "#fff");
+  }
+  globalThis.CropPreviewGizmo = drawGizmo;
 
   // ── drag ──────────────────────────────────────────────────────────────
   /** Round a DELTA to the field's snap increment (used for multi-selection). */

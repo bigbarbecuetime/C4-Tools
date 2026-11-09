@@ -17,6 +17,82 @@
  */
 "use strict";
 
+/** Live cross-page catalog. Every picker read goes back to localStorage, so a
+ * newly created or renamed draft is available as soon as another designer is
+ * opened; exporting or re-uploading YAML is not required. */
+const DraftCatalog = (() => {
+  const KEYS = {
+    crops: "crop-designer-v4",
+    farmlands: "farmland-designer-v1",
+    consumables: "consumable-designer-v1",
+  };
+
+  function read(key) {
+    try { return JSON.parse(localStorage.getItem(key)) || {}; }
+    catch (error) { return {}; }
+  }
+
+  function add(map, id, value) {
+    const key = String(id || "").trim();
+    if (key) map.set(key, value || {});
+  }
+
+  function crops() {
+    const map = new Map();
+    for (const crop of read(KEYS.crops).crops || []) add(map, crop.id, crop);
+    return map;
+  }
+
+  function farmlands() {
+    const cropDraft = read(KEYS.crops);
+    const map = new Map();
+    for (const [id, type] of Object.entries(cropDraft.farmlandTypes || {})) add(map, id, type);
+    for (const type of read(KEYS.farmlands).types || []) add(map, type.id, type);
+    return map;
+  }
+
+  function consumables() {
+    const cropDraft = read(KEYS.crops);
+    const map = new Map();
+    for (const [id, item] of Object.entries(cropDraft.consumables || {})) add(map, id, item);
+    for (const item of read(KEYS.consumables).items || []) add(map, item.id, item);
+    return map;
+  }
+
+  function first(value) {
+    return String(Array.isArray(value) ? value[0] || "" : value || "")
+      .split(",")[0].trim();
+  }
+
+  function farmlandTexture(id) {
+    if (id === "minecraft") return MCAssets.blockSprite("farmland_moist");
+    const type = farmlands().get(id);
+    return MCAssets.blockSprite(first(type?.visual) || id);
+  }
+
+  function consumableTexture(id) {
+    const item = consumables().get(id);
+    return MCAssets.item(first(item?.outputItem || item?.model) || id);
+  }
+
+  function cropTexture(id) {
+    const crop = crops().get(id);
+    return MCAssets.item(first(crop?.seedModel) || "minecraft:wheat_seeds");
+  }
+
+  return {
+    cropKeys: () => [...crops().keys()],
+    farmlandKeys: () => ["minecraft", ...farmlands().keys()].filter((id, i, all) => all.indexOf(id) === i),
+    consumableKeys: () => [...consumables().keys()],
+    crop: id => crops().get(String(id || "").trim()) || null,
+    farmland: id => farmlands().get(String(id || "").trim()) || null,
+    consumable: id => consumables().get(String(id || "").trim()) || null,
+    farmlandVisual: id => first(farmlands().get(String(id || "").trim())?.visual),
+    cropTexture, farmlandTexture, consumableTexture,
+  };
+})();
+globalThis.DraftCatalog = DraftCatalog;
+
 const KeyPicker = (() => {
   // list name -> { keys, icon } - icon decides which texture loader is used.
   const LISTS = {
@@ -37,17 +113,21 @@ const KeyPicker = (() => {
       keys: () => globalThis.EventsEditor?.PARTICLES || [],
       icon: "particle",
     },
-    // Tool-local catalogs are populated from uploaded project files. Keeping
-    // them behind providers gives custom ids the same project picker as
-    // vanilla ids without coupling this shared control to one designer.
+    // Draft catalogs include unsent work from all three designers, plus ids
+    // imported into the crop editor from project files.
+    "crops": {
+      keys: () => DraftCatalog.cropKeys(),
+      texture: key => DraftCatalog.cropTexture(key),
+      icon: "item",
+    },
     "farmlands": {
-      keys: () => globalThis.CropDesignerCatalog?.farmlandKeys?.() || ["minecraft"],
-      texture: key => globalThis.CropDesignerCatalog?.farmlandTexture?.(key),
+      keys: () => DraftCatalog.farmlandKeys(),
+      texture: key => DraftCatalog.farmlandTexture(key),
       icon: "block",
     },
     "consumables": {
-      keys: () => globalThis.CropDesignerCatalog?.consumableKeys?.() || [],
-      texture: key => globalThis.CropDesignerCatalog?.consumableTexture?.(key),
+      keys: () => DraftCatalog.consumableKeys(),
+      texture: key => DraftCatalog.consumableTexture(key),
       icon: "item",
     },
     "group-members": {

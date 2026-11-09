@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Config Editor</title>
 <link rel="icon" type="image/png" href="../shared/c4-mark.png?v=4">
-<link rel="stylesheet" href="../shared/common.css?v=34">
+<script src="../shared/theme-boot.js?v=1"></script>
+<link rel="stylesheet" href="../shared/common.css?v=41">
 </head>
 <body data-screen="outline">
 <div class="app two">
@@ -76,7 +77,6 @@
             aria-label="Example one-block crop hitbox outline"></canvas>
           <div class="config-preview-caption">
             <strong>Example crop hitbox</strong>
-            <span id="highlight-preview-detail">1 block wide × 1 block tall</span>
           </div>
         </div>
         <div class="form-grid">
@@ -84,7 +84,7 @@
             <label>Outline block <input id="ch-block" type="text" spellcheck="false" placeholder="BLACK_STAINED_GLASS" data-keys="blocks"></label>
             <canvas class="tex-chip" id="ch-chip" width="16" height="16"></canvas>
           </div>
-          <label>Outline thickness (blocks) <input id="ch-thickness" type="number" min="0.005" max="0.5" step="0.005" data-range></label>
+          <label>Outline thickness (blocks) <input id="ch-thickness" type="number" min="0.0001" max="0.1" step="0.0001" data-range></label>
           <label class="check"><input id="ch-glow" type="checkbox"> Glowing outline</label>
           <p class="foot-note">see through walls</p>
           <div id="ch-glow-options" class="conditional" hidden>
@@ -199,13 +199,14 @@
   <button data-screen="view">config.yml</button>
 </nav>
 
-<script src="../shared/ui.js?v=18"></script>
-<script src="../shared/mc-assets.js?v=7"></script>
+<script src="../shared/ui.js?v=20"></script>
+<script src="../shared/mc-assets.js?v=12"></script>
 <script src="../shared/yaml-lite.js?v=3"></script>
-<script src="../shared/mc-keys.js?v=6"></script>
-<script src="../shared/key-picker.js?v=5"></script>
+<script src="../shared/mc-keys.js?v=7"></script>
+<script src="../shared/key-picker.js?v=7"></script>
 <script src="default-config.js?v=3"></script>
-<script src="app.js?v=18"></script>
+<script src="../shared/lifetimes.js?v=4"></script>
+<script src="app.js?v=23"></script>
 <script>UI.initShell({ pane: "general" });</script>
 </body>
 </html>

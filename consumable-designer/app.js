@@ -17,6 +17,33 @@ const PROCESS_TYPES = ["cut", "fry", "stir", "sequence", "temperature",
                        "pound", "sieve", "lightning", "smelt"];
 /** Process types that have no minigame GUI with difficulty/rounds unused. */
 const NON_MINIGAME_TYPES = new Set(["ferment", "lightning", "smelt"]);
+/**
+ * Types that read `duration_seconds`, and what the number means to each - the
+ * field is only shown for these, so an author is never asked for a cook time on
+ * a process that has none. Ferment and distill are listed for when their
+ * stations become obtainable; they are not selectable yet.
+ */
+const DURATION_MEANING = {
+  temperature: "Game length",
+  distill: "Game length",
+  ferment: "Peak time",
+  smelt: "Cook time",
+};
+
+/** The one-line explanation shown under the process selector. */
+function processHint(type) {
+  if (!type) return "No process: the ingredients craft instantly, always at full quality.";
+  if (type === "smelt") {
+    return "Smelting has no minigame and keeps the source item's quality. "
+      + "It can only take one ingredient.";
+  }
+  if (type === "lightning") return "Struck by lightning rather than crafted. No minigame.";
+  if (type === "ferment") return "Ferments in place. No minigame; the peak time sets the window.";
+  return "A preparation minigame. Difficulty sets how hard it is, and rounds how many "
+    + "rounds of the minigame run.";
+}
+/** Bukkit's PotionEffect duration is in ticks; the form asks for seconds. */
+const TICKS_PER_SECOND = 20;
 const EFFECT_TYPES = ["speed", "slowness", "haste", "strength", "weakness", "poison",
   "regeneration", "resistance", "fire_resistance", "water_breathing", "invisibility",
   "blindness", "night_vision", "hunger", "nausea", "wither", "absorption", "saturation",
@@ -36,14 +63,21 @@ function blankItem(id) {
     headTexture: "",
     outputAmount: "1",
     outputItem: "",    // optional: craft yields this vanilla material instead of a custom item
+    outputMode: "custom", // "custom" = a plugin item, "vanilla" = the plain outputItem
     insanity: 0,
     diet: "",          // mcMMO diet: "" none | "farmers" | "fishermans"
     food: { enabled: false, nutrition: 2, saturation: 1.0, seconds: 1.6,
-            animation: "eat", alwaysEat: true },
-    perishable: { enabled: false, lifetimeMinutes: 10080 },
+            animation: "eat", alwaysEat: true,
+            // Both follow the animation until edited; changing the animation
+            // resets them to that animation's default.
+            consumeParticles: defaultConsumeParticles("eat"),
+            consumeSound: defaultConsumeSound("eat") },
+    // Food that never spoils is the exception here, so a new draft starts
+    // perishable. An uploaded config still reflects whatever it declares.
+    perishable: { enabled: true, lifetimeMinutes: Lifetimes.defaultMinutes() },
     toxic: { enabled: false, grace: 10,
              effects: [{ type: "poison", duration: 100, amplifier: 0 }] },
-    process: { enabled: false, type: "cut", difficulty: 1, rounds: "", durationSeconds: "",
+    process: { enabled: false, type: "cut", difficulty: 1, rounds: 1, durationSeconds: "",
                furnaceTypes: { furnace: true, smoker: false, blast_furnace: false,
                                campfire: true, soul_campfire: true } },
     ingredients: [],
@@ -58,10 +92,66 @@ function blankItem(id) {
 }
 
 // Item event triggers (matches ItemEvents): on_consume when eaten, on_use on
-// right-click, on_punch on left-click. All cosmetic (never cancel the action).
-const CONSUMABLE_TRIGGERS = ["on_consume", "on_use", "on_punch"];
+// right-click, on_equip when drawn into either hand, while_holding/while_using
+// looping for as long as the item is held / being used, on_punch on left-click.
+// All cosmetic (never cancel the action).
+const CONSUMABLE_TRIGGERS = ["on_consume", "on_use", "on_equip",
+                             "while_holding", "while_using", "on_punch"];
+// The two triggers that repeat. Each carries its own interval, written as the
+// `{interval_ticks, effects}` map form; the plugin also accepts a plain list.
+const LOOP_TRIGGERS = ["while_holding", "while_using"];
+const DEFAULT_INTERVAL_TICKS = 10;
+const MIN_INTERVAL_TICKS = 2;
 // Crafting effects: either one general `on_craft`, or per-quality-tier overrides.
 const CRAFT_TIERS = ["ruined", "poor", "decent", "good", "perfect"];
+// Every vanilla ItemUseAnimation, matching model/UseAnimation.java. Most packs
+// want eat/drink/none, but the rest are exposed rather than second-guessed.
+const USE_ANIMATIONS = ["eat", "drink", "none", "block", "bow", "trident",
+                        "crossbow", "spyglass", "toot_horn", "brush", "bundle", "spear"];
+
+/**
+ * Vanilla food values to size a custom one against, ordered by nutrition.
+ * [name, nutrition, saturation] - saturation is the vanilla saturation
+ * *modifier* times nutrition times two, i.e. the number the wiki lists.
+ */
+const VANILLA_FOOD_REFERENCE = [
+  ["Cookie", 2, 0.4],
+  ["Melon slice", 2, 1.2],
+  ["Apple", 4, 2.4],
+  ["Bread", 5, 6.0],
+  ["Cooked cod", 5, 6.0],
+  ["Cooked chicken", 6, 7.2],
+  ["Cooked salmon", 6, 9.6],
+  ["Golden carrot", 6, 14.4],
+  ["Steak", 8, 12.8],
+  ["Rabbit stew", 10, 12.0],
+];
+
+/** The reference table shown under the food fields. */
+function vanillaFoodTable() {
+  const rows = VANILLA_FOOD_REFERENCE
+    .map(([name, nutrition, saturation]) =>
+      `<tr><th scope="row">${name}</th><td>${nutrition}</td><td>${saturation.toFixed(1)}</td></tr>`)
+    .join("");
+  return `<table class="ref-table">
+      <caption>Vanilla reference</caption>
+      <thead><tr><th scope="col">Food</th><th scope="col">Nutrition</th><th scope="col">Saturation</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+/** Vanilla only scatters crumbs while eating. Mirrors UseAnimation.java. */
+function defaultConsumeParticles(animation) {
+  return animation === "eat";
+}
+/**
+ * The sound vanilla plays while consuming: the eating sound for `eat`, the gulp
+ * for `drink`, nothing for the rest. "" means "leave vanilla's own default",
+ * which for `eat` is already the eating sound, so it is written out as nothing.
+ */
+function defaultConsumeSound(animation) {
+  return animation === "eat" ? "" : animation === "drink" ? "ENTITY_GENERIC_DRINK" : "none";
+}
 
 /** A fresh events object for a consumable, including the crafting section. */
 function makeEvents() {
@@ -69,13 +159,23 @@ function makeEvents() {
   e.on_craft = [];
   e.craftMode = "general";        // "general" = one on_craft; "tiers" = per-tier
   e.craftTiers = EventsEditor.defaults(CRAFT_TIERS);
+  e.intervals = {};
+  for (const t of LOOP_TRIGGERS) e.intervals[t] = DEFAULT_INTERVAL_TICKS;
   return e;
+}
+
+/** Clamp a loop interval the way the plugin does. */
+function clampInterval(v) {
+  const n = Math.round(num(v, DEFAULT_INTERVAL_TICKS));
+  return isNaN(n) || n < MIN_INTERVAL_TICKS ? MIN_INTERVAL_TICKS : n;
 }
 
 /** Backfill craft fields on an events object loaded from an older draft/import. */
 function normalizeEvents(e) {
   if (!e) return makeEvents();
   for (const t of CONSUMABLE_TRIGGERS) if (!Array.isArray(e[t])) e[t] = [];
+  if (!e.intervals || typeof e.intervals !== "object") e.intervals = {};
+  for (const t of LOOP_TRIGGERS) e.intervals[t] = clampInterval(e.intervals[t]);
   if (!Array.isArray(e.on_craft)) e.on_craft = [];
   if (e.craftMode !== "tiers") e.craftMode = "general";
   if (!e.craftTiers) e.craftTiers = EventsEditor.defaults(CRAFT_TIERS);
@@ -87,6 +187,18 @@ function normalizeEvents(e) {
 function eventsFromYaml(o) {
   const e = EventsEditor.fromYaml(o, CONSUMABLE_TRIGGERS);
   o = o || {};
+  // A looping trigger may arrive as a plain list (already handled above) or as
+  // {interval_ticks, effects}. Unwrap the map form so the editor sees a list.
+  e.intervals = {};
+  for (const t of LOOP_TRIGGERS) {
+    const raw = o[t];
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      e.intervals[t] = clampInterval(raw.interval_ticks);
+      e[t] = EventsEditor.fromYaml({ effects: raw.effects }, ["effects"]).effects;
+    } else {
+      e.intervals[t] = DEFAULT_INTERVAL_TICKS;
+    }
+  }
   e.on_craft = EventsEditor.fromYaml(o, ["on_craft"]).on_craft;
   const tiers = o.on_craft_tiers;
   e.craftMode = (tiers && typeof tiers === "object") ? "tiers" : "general";
@@ -94,16 +206,29 @@ function eventsFromYaml(o) {
   return e;
 }
 
-/** Emit the combined `events:` block (flat triggers + crafting) for one item. */
-function eventsYaml(ev, pad) {
-  const flat = CONSUMABLE_TRIGGERS.slice();
+/**
+ * Emit the combined `events:` block (flat triggers + crafting) for one item.
+ * `craftOnly` drops every item-carried trigger, for a vanilla output: those fire
+ * off the plugin id stamped on the item, which a vanilla output never gets.
+ */
+function eventsYaml(ev, pad, craftOnly) {
+  // Looping triggers are emitted separately, in their interval-map form.
+  const flat = craftOnly ? [] : CONSUMABLE_TRIGGERS.filter(t => !LOOP_TRIGGERS.includes(t));
   if (ev.craftMode !== "tiers") flat.push("on_craft");
   const flatHas = EventsEditor.hasAny(ev, flat);
+  const loops = craftOnly ? [] : LOOP_TRIGGERS.filter(t => (ev[t] || []).some(EventsEditor.isReal));
   const tiersActive = ev.craftMode === "tiers"
     && CRAFT_TIERS.some(t => (ev.craftTiers[t] || []).some(EventsEditor.isReal));
-  if (!flatHas && !tiersActive) return [];
+  if (!flatHas && !loops.length && !tiersActive) return [];
   const L = [pad + "events:"];
   if (flatHas) L.push(...EventsEditor.triggerLines(ev, flat, pad + "  "));
+  for (const t of loops) {
+    L.push(`${pad}  ${t}:`);
+    L.push(`${pad}    interval_ticks: ${clampInterval((ev.intervals || {})[t])}`);
+    // triggerLines emits `<key>:` then the entries, so hand it a one-key view
+    // named `effects` to get the nested effects list.
+    L.push(...EventsEditor.triggerLines({ effects: ev[t] }, ["effects"], pad + "    "));
+  }
   if (tiersActive) {
     L.push(pad + "  on_craft_tiers:");
     L.push(...EventsEditor.triggerLines(ev.craftTiers, CRAFT_TIERS, pad + "    "));
@@ -124,8 +249,9 @@ function load() {
       const loaded = JSON.parse(raw);
       // forward-compat: fill fields added since the draft was saved
       for (const it of loaded.items || []) {
-        if (!it.perishable) it.perishable = { enabled: false, lifetimeMinutes: 10080 };
+        if (!it.perishable) it.perishable = { enabled: false, lifetimeMinutes: Lifetimes.defaultMinutes() };
         if (it.headTexture == null) it.headTexture = "";
+        if (!it.outputMode) it.outputMode = (it.outputItem || "").trim() ? "vanilla" : "custom";
         if (it.shaped == null) it.shaped = (it.shape || []).some(r => (r || "").trim());
         if (!it.process.furnaceTypes) it.process.furnaceTypes =
           { furnace: true, smoker: false, blast_furnace: false, campfire: true, soul_campfire: true };
@@ -166,6 +292,8 @@ function itemFromYaml(id, o) {
   if (o.head_texture != null) it.headTexture = String(o.head_texture);
   if (o.output_amount != null) it.outputAmount = String(o.output_amount);
   if (o.output_item != null) it.outputItem = String(o.output_item);
+  // output_item is exactly what vanilla mode means, so the mode follows the key.
+  it.outputMode = (it.outputItem || "").trim() ? "vanilla" : "custom";
   if (o.insanity_multiplier != null) it.insanity = num(o.insanity_multiplier, 0);
   it.diet = (o.mcmmo && o.mcmmo.diet != null) ? String(o.mcmmo.diet).toLowerCase() : "";
 
@@ -173,10 +301,17 @@ function itemFromYaml(id, o) {
     it.food = { enabled: true,
       nutrition: num(o.food.nutrition, 2), saturation: num(o.food.saturation, 1),
       seconds: num(o.food.seconds, 1.6), animation: o.food.animation || "eat",
-      alwaysEat: o.food.can_always_eat !== false };
+      alwaysEat: o.food.can_always_eat !== false,
+      consumeParticles: o.food.consume_particles == null
+        ? defaultConsumeParticles(o.food.animation || "eat")
+        : !!o.food.consume_particles,
+      consumeSound: o.food.consume_sound == null
+        ? defaultConsumeSound(o.food.animation || "eat")
+        : String(o.food.consume_sound) };
   }
   if (o.perishable) {
-    it.perishable = { enabled: true, lifetimeMinutes: num(o.perishable.lifetime_minutes, 10080) };
+    it.perishable = { enabled: true,
+      lifetimeMinutes: num(o.perishable.lifetime_minutes, Lifetimes.defaultMinutes()) };
   }
   if (o.toxic) {
     it.toxic = { enabled: true, grace: num(o.toxic.grace_seconds, 10),
@@ -188,7 +323,7 @@ function itemFromYaml(id, o) {
     const ftList = (o.process.furnace_types || []).map(s => String(s).toLowerCase());
     it.process = { enabled: true, type: o.process.type || "cut",
       difficulty: clamp(num(o.process.difficulty, 1), 1, 3),
-      rounds: o.process.rounds != null ? String(o.process.rounds) : "",
+      rounds: Math.max(1, num(o.process.rounds, 1)),
       durationSeconds: o.process.duration_seconds != null ? String(o.process.duration_seconds) : "",
       furnaceTypes: {
         furnace:       ftList.length === 0 || ftList.includes("furnace"),
@@ -248,8 +383,8 @@ function importYaml(text, fileName) {
 function cur() { return state.items[state.current]; }
 
 const CONSUMABLE_SECTION_TITLES = [
-  "Identity", "Food (edible)", "Perishable (spoils over time)", "Toxic to carry",
-  "Preparation process", "Ingredients", "Addiction", "Effects", "Crafting effects",
+  "Identity", "Food", "Perishable", "Toxic to carry",
+  "Crafting", "Addiction", "Effects", "Crafting effects",
 ];
 
 function renderDisabledFormNav() {
@@ -323,39 +458,57 @@ function buildForm() {
     return;
   }
 
-  root.appendChild(section("Identity", `
-    <label>Id <input type="text" data-f="id" value="${esc(it.id)}" spellcheck="false"></label>
-    <label>Display name <input type="text" data-f="name" value="${esc(it.name)}"></label>
-    <label>Description <input type="text" data-f="description" value="${esc(it.description)}"></label>
-    <p class="hint">Use &amp; codes for color and formatting. For example, &amp;6 makes text gold and &amp;l makes it bold. See
-      <a href="https://minecraft.wiki/w/Formatting_codes" target="_blank" rel="noopener">Formatting codes</a>.
-      Only the Java Edition set (0-9a-f, k/l/m/n/o/r) is supported.</p>
-    <div class="with-chip">
-      <label>Item model <input type="text" data-f="model" value="${esc(it.model)}" spellcheck="false" data-keys="item-models"></label>
-      <canvas class="tex-chip" id="model-chip" width="16" height="16"></canvas>
+  // With a vanilla output the plugin hands the player a plain ItemStack -
+  // ConsumableFactory returns before it writes any meta - so the item carries no
+  // name, lore, model or plugin id, and everything keyed off that id (food,
+  // perishable, toxic, addiction, held/consume effects) never runs. Those
+  // sections are left out of the form entirely in vanilla mode. The recipe,
+  // quality tier and craft effects are read off the definition at craft time,
+  // so they still apply.
+  const vanilla = it.outputMode === "vanilla";
+  const identity = section("Identity", `
+    <div class="seg" data-sub="outmode">
+      <button type="button" data-outmode="custom" class="${vanilla ? "" : "on"}">Custom consumable</button>
+      <button type="button" data-outmode="vanilla" class="${vanilla ? "on" : ""}">Vanilla output item</button>
     </div>
-    <label>Head texture (skin URL or base64; overrides item model)
-      <input type="text" data-f="headTexture" value="${esc(it.headTexture || "")}" spellcheck="false"></label>
-    <label>Output amount
-      <input type="text" data-f="outputAmount" value="${esc(it.outputAmount)}" spellcheck="false"></label>
-    <p class="foot-note plain">a number, or <code>per_unit</code></p>
-    <label>Vanilla output item (optional; the craft yields this vanilla item instead, e.g. BREAD)
-      <input type="text" data-f="outputItem" value="${esc(it.outputItem || "")}" spellcheck="false" placeholder="(leave blank for a custom item)" data-keys="items"></label>
-    <label>Insanity multiplier <input type="number" data-f="insanity" min="0" step="0.1" value="${it.insanity}"></label>
-    <label>mcMMO diet (only applies with mcMMO installed)
-      <select data-f="diet">
-        <option value="" ${!it.diet ? "selected" : ""}>none</option>
-        <option value="farmers" ${it.diet === "farmers" ? "selected" : ""}>Farmer's Diet (Herbalism)</option>
-        <option value="fishermans" ${it.diet === "fishermans" ? "selected" : ""}>Fisherman's Diet (Fishing)</option>
-      </select></label>
+    <label>Id <input type="text" data-f="id" value="${esc(it.id)}" spellcheck="false"></label>
+    <label>Display name <input type="text" data-f="name" value="${esc(it.name)}" data-fmt></label>
+    ${vanilla ? `
+      <p class="foot-note plain">only used in the craft message - the item itself keeps its vanilla name</p>
+      <label>Vanilla output item
+        <input type="text" data-f="outputItem" value="${esc(it.outputItem || "")}" spellcheck="false" placeholder="BREAD" data-keys="items"></label>
+      <p class="hint">The craft yields this plain vanilla item, so none of the plugin's item data
+        comes with it: no description, item model, head texture, food, perishable, toxic, addiction
+        or held/consume effects. The recipe, quality tiers and crafting effects still apply.</p>
+    ` : `
+      <label>Description <input type="text" data-f="description" value="${esc(it.description)}" data-fmt="&amp;7&amp;o"></label>
+      <p class="hint">Use &amp; codes for color and formatting. For example, &amp;6 makes text gold and &amp;l makes it bold. See
+        <a href="https://minecraft.wiki/w/Formatting_codes" target="_blank" rel="noopener">Formatting codes</a>.
+        Only the Java Edition set (0-9a-f, k/l/m/n/o/r) is supported.</p>
+      <div class="with-chip">
+        <label>Item model <input type="text" data-f="model" value="${esc(it.model)}" spellcheck="false" data-keys="item-models"></label>
+        <canvas class="tex-chip" id="model-chip" width="16" height="16"></canvas>
+      </div>
+      <label>Head texture (skin URL or base64; overrides item model)
+        <input type="text" data-f="headTexture" value="${esc(it.headTexture || "")}" spellcheck="false"></label>
+    `}
   `, (f, t) => {
-    if (f === "insanity") it.insanity = Math.max(0, num(t.value, 0));
-    else it[f] = t.value;
+    it[f] = t.value;
     if (f === "id") renderYAML(); // tab label refreshes on rebuild
     paintModelChip();
-  }));
+  });
+  // Switching mode changes which sections exist, so the whole form rebuilds.
+  // The other mode's values stay on the draft, so switching back restores them.
+  identity.querySelectorAll("[data-sub=outmode] button").forEach(button => {
+    button.onclick = () => {
+      if (button.dataset.outmode === it.outputMode) return;
+      it.outputMode = button.dataset.outmode;
+      changed(true);
+    };
+  });
+  root.appendChild(identity);
 
-  root.appendChild(toggleSection("Food (edible)", it.food, "enabled", `
+  if (!vanilla) root.appendChild(toggleSection("Food", it.food, "enabled", `
     <div class="row">
       <label>Nutrition <input type="number" data-f="nutrition" min="0" value="${it.food.nutrition}"></label>
       <label>Saturation <input type="number" data-f="saturation" min="0" step="0.1" value="${it.food.saturation}"></label>
@@ -363,26 +516,54 @@ function buildForm() {
     </div>
     <div class="row">
       <label>Animation <select data-f="animation">
-        <option value="eat" ${it.food.animation === "eat" ? "selected" : ""}>eat</option>
-        <option value="drink" ${it.food.animation === "drink" ? "selected" : ""}>drink</option>
+        ${USE_ANIMATIONS.map(a =>
+          `<option value="${a}" ${it.food.animation === a ? "selected" : ""}>${a}</option>`).join("")}
       </select></label>
-      <label class="check"><input type="checkbox" data-f="alwaysEat" ${it.food.alwaysEat ? "checked" : ""}> always edible</label>
+      <label>Consume sound <input type="text" data-keys="sounds" data-f="consumeSound"
+        placeholder="${it.food.animation === "eat" ? "vanilla eating sound" : "none"}"
+        spellcheck="false" value="${esc(it.food.consumeSound || "")}"></label>
     </div>
-    <p class="hint">Vanilla reference (nutrition / saturation): cookie 2 / 0.4 &middot; melon slice 2 / 1.2 &middot;
-    apple 4 / 2.4 &middot; bread 5 / 6.0 &middot; cooked cod 5 / 6.0 &middot; cooked chicken 6 / 7.2 &middot;
-    cooked salmon 6 / 9.6 &middot; golden carrot 6 / 14.4 &middot; steak 8 / 12.8 &middot; rabbit stew 10 / 12.0</p>
+    <div class="switch-grid">
+      <label class="check" title="Consumable even on a full hunger bar, the way golden apples, honey bottles and milk are (can_always_eat). Off behaves like bread or steak: a full bar blocks it."><input type="checkbox" data-f="alwaysEat" ${it.food.alwaysEat ? "checked" : ""}> can eat if full</label>
+      ${it.food.animation === "none" ? "" : `<label class="check"><input type="checkbox" data-f="consumeParticles" ${it.food.consumeParticles ? "checked" : ""}> consume particles</label>`}
+    </div>
+    ${vanillaFoodTable()}
+    <div class="subsection">
+      <div class="sub-head"><strong>mcMMO diet</strong><span class="grow"></span></div>
+      <select data-f="diet" aria-label="mcMMO diet">
+        <option value="" ${!it.diet ? "selected" : ""}>none</option>
+        <option value="farmers" ${it.diet === "farmers" ? "selected" : ""}>Farmer's Diet (Herbalism)</option>
+        <option value="fishermans" ${it.diet === "fishermans" ? "selected" : ""}>Fisherman's Diet (Fishing)</option>
+      </select>
+    </div>
   `, (f, t) => {
+    if (f === "diet") { it.diet = t.value; return; }
     if (f === "alwaysEat") it.food.alwaysEat = t.checked;
-    else if (f === "animation") it.food.animation = t.value;
+    else if (f === "animation") {
+      // A new animation brings its own feedback defaults, and shows or hides
+      // the particles switch, so the section is rebuilt.
+      it.food.animation = t.value;
+      it.food.consumeParticles = defaultConsumeParticles(t.value);
+      it.food.consumeSound = defaultConsumeSound(t.value);
+      buildForm();
+    } else if (f === "consumeParticles") it.food.consumeParticles = t.checked;
+    else if (f === "consumeSound") it.food.consumeSound = t.value;
     else it.food[f] = num(t.value, 1);
   }));
 
-  root.appendChild(toggleSection("Perishable (spoils over time)", it.perishable, "enabled", `
-    <label>Lifetime (minutes) <input type="number" data-f="lifetimeMinutes" min="0.1" step="1" value="${it.perishable.lifetimeMinutes}"></label>
-    <p class="hint">The item spoils after this time. Spoiled food has weaker effects and may cause nausea or poison.</p>
-    <p class="hint">Useful values: 4320 for 3 days, 10080 for 1 week, 20160 for 2 weeks, and 43200 for 1 month.</p>
+  if (!vanilla) root.appendChild(toggleSection("Perishable", it.perishable, "enabled", `
+    <label>Lifetime
+      <span class="input-with-unit"><input type="number" data-f="lifetimeMinutes" min="0.1" step="1"
+        value="${it.perishable.lifetimeMinutes}" aria-label="Lifetime in minutes"><span class="input-unit">min</span></span></label>
+    <p class="hint">Keeps for ${Lifetimes.format(it.perishable.lifetimeMinutes)}. Spoiled food has weaker
+    effects and may cause nausea or poison.</p>
+    ${Lifetimes.tableHtml()}
   `, (f, t) => {
-    if (f === "lifetimeMinutes") it.perishable.lifetimeMinutes = Math.max(0.1, num(t.value, 10080));
+    if (f === "lifetimeMinutes") {
+      it.perishable.lifetimeMinutes = Math.max(0.1, num(t.value, Lifetimes.defaultMinutes()));
+      // The "keeps for" line above restates the value in words.
+      buildForm();
+    }
   }));
 
   // toxic
@@ -391,7 +572,7 @@ function buildForm() {
     <div data-sub="toxic-effects"></div>
     <button class="add" data-add-toxic-effect>+ toxic effect</button>
   `, (f, t) => { if (f === "grace") it.toxic.grace = Math.max(0, num(t.value, 10)); });
-  root.appendChild(toxic);
+  if (!vanilla) root.appendChild(toxic);
   const toxRoot = toxic.querySelector("[data-sub=toxic-effects]");
   if (toxRoot) {
     it.toxic.effects.forEach((eff, i) => {
@@ -400,13 +581,21 @@ function buildForm() {
       row.innerHTML = `
         <label>type <select data-f="type">${EFFECT_TYPES.map(e =>
           `<option ${eff.type === e ? "selected" : ""}>${e}</option>`).join("")}</select></label>
-        <label>duration (ticks) <input type="number" data-f="duration" min="1" value="${eff.duration}"></label>
-        <label>amplifier <input type="number" data-f="amplifier" min="0" value="${eff.amplifier}"></label>
+        <label>duration
+          <span class="input-with-unit"><input type="number" data-f="duration" min="0.05" step="0.5"
+            value="${eff.duration / TICKS_PER_SECOND}" aria-label="duration in seconds"><span class="input-unit">s</span></span></label>
+        <label>level <input type="number" data-f="amplifier" min="1" value="${eff.amplifier + 1}"></label>
         <button class="danger row-delete" data-del>✕</button>`;
+      // The config stores vanilla's own units - ticks, and an amplifier where 0
+      // is level I - so both are converted at the edge rather than in the model.
       row.addEventListener("input", (e) => {
         const f = e.target.dataset.f;
         if (f === "type") eff.type = e.target.value;
-        else eff[f] = Math.max(0, num(e.target.value, 0));
+        else if (f === "duration") {
+          eff.duration = Math.max(1, Math.round(num(e.target.value, 5) * TICKS_PER_SECOND));
+        } else if (f === "amplifier") {
+          eff.amplifier = Math.max(0, Math.round(num(e.target.value, 1)) - 1);
+        }
         renderYAML(); renderPreview(); save();
       });
       row.querySelector("[data-del]").onclick = () => { it.toxic.effects.splice(i, 1); changed(true); };
@@ -419,105 +608,11 @@ function buildForm() {
     };
   }
 
-  const procSection = toggleSection("Preparation process", it.process, "enabled", `
-    <div class="row">
-      <label>type <select data-f="type">${PROCESS_TYPES.map(p =>
-        `<option ${it.process.type === p ? "selected" : ""}>${p}</option>`).join("")}</select></label>
-      <label data-minigame-field>difficulty (1-3) <input type="number" data-f="difficulty" min="1" max="3" value="${it.process.difficulty}"></label>
-    </div>
-    <div class="row" data-minigame-field>
-      <label>rounds (blank = default) <input type="text" data-f="rounds" value="${esc(it.process.rounds)}"></label>
-      <label>duration seconds <input type="text" data-f="durationSeconds" value="${esc(it.process.durationSeconds)}"></label>
-    </div>
-    <p class="hint">With no process items are an instant craft at full quality. rounds: flips/targets/beats/impurities.
-    duration_seconds: temperature &amp; distill game length, ferment peak time, smelt cook time.
-    Smelting has no minigame. It keeps the source quality. Use duration_seconds for its cook time.</p>
-    <div data-smelt-only>
-      <p class="hint">Allowed heat sources <span class="inline-note">Cannot use both a blast furnace and a smoker/campfire.</span></p>
-      <div class="row">
-        <label class="check"><input type="checkbox" data-ft="furnace"       ${it.process.furnaceTypes?.furnace       !== false ? "checked" : ""}> furnace</label>
-        <label class="check"><input type="checkbox" data-ft="smoker"        ${it.process.furnaceTypes?.smoker        !== false ? "checked" : ""}> smoker</label>
-        <label class="check"><input type="checkbox" data-ft="blast_furnace" ${it.process.furnaceTypes?.blast_furnace !== false ? "checked" : ""}> blast furnace</label>
-        <label class="check"><input type="checkbox" data-ft="campfire"      ${it.process.furnaceTypes?.campfire      !== false ? "checked" : ""}> campfire</label>
-        <label class="check"><input type="checkbox" data-ft="soul_campfire" ${it.process.furnaceTypes?.soul_campfire !== false ? "checked" : ""}> soul campfire</label>
-      </div>
-    </div>
-  `, (f, t) => {
-    if (f === "type") { it.process.type = t.value; syncMinigameFields(); }
-    else if (f === "difficulty") it.process.difficulty = clamp(num(t.value, 2), 1, 3);
-    else it.process[f] = t.value;
-  });
-  // Reads it.process.type fresh each call, so it must run AFTER the onInput
-  // callback above has updated it - not as an independent listener on the
-  // <select>, which would fire during the event's target phase, before the
-  // delegated listener on procSection (added by toggleSection) applies the
-  // new value, leaving the furnace/minigame fields one selection stale.
-  function syncMinigameFields() {
-    const hide = NON_MINIGAME_TYPES.has(it.process.type);
-    procSection.querySelectorAll("[data-minigame-field]").forEach(el => {
-      el.style.display = hide ? "none" : "";
-    });
-    const isSmelt = it.process.type === "smelt";
-    procSection.querySelectorAll("[data-smelt-only]").forEach(el => {
-      el.style.display = isSmelt ? "" : "none";
-    });
-    if (isSmelt) syncFurnaceGrey();
-  }
-
-  // Blast furnace (ore group, RAW_IRON base) and the campfire/smoker heat sources
-  // (food group, raw-meat base) are mutually exclusive - no single cookable base
-  // works in both. Grey out the opposing group once the author commits to one side
-  // (furnace is shared and always available). A legacy all-selected draft greys
-  // nothing until the first toggle resolves it.
-  function furnaceChecked(k) {
-    const ft = it.process.furnaceTypes || {};
-    return ft[k] !== false;
-  }
-  function syncFurnaceGrey() {
-    const oreOn = furnaceChecked("blast_furnace");
-    const flameOn = furnaceChecked("smoker") || furnaceChecked("campfire") || furnaceChecked("soul_campfire");
-    const disableFlame = oreOn && !flameOn;
-    const disableOre = flameOn && !oreOn;
-    procSection.querySelectorAll("input[data-ft]").forEach(cb => {
-      const k = cb.dataset.ft;
-      const dis = k === "blast_furnace" ? disableOre
-        : (k === "smoker" || k === "campfire" || k === "soul_campfire") ? disableFlame
-        : false;
-      cb.disabled = dis;
-      cb.checked = furnaceChecked(k);
-      const label = cb.closest("label");
-      if (label) label.style.opacity = dis ? "0.4" : "";
-    });
-  }
-  root.appendChild(procSection);
-  procSection.addEventListener("input", (e) => {
-    const ft = e.target.dataset.ft;
-    if (!ft) return;
-    if (!it.process.furnaceTypes) it.process.furnaceTypes =
-      { furnace: true, smoker: false, blast_furnace: false, campfire: true, soul_campfire: true };
-    it.process.furnaceTypes[ft] = e.target.checked;
-    // Mutual exclusivity: one item can't cook in both a blast furnace (ore group)
-    // and a campfire/smoker (food group), so selecting one side clears the other.
-    if (e.target.checked) {
-      if (ft === "blast_furnace") {
-        it.process.furnaceTypes.smoker = false;
-        it.process.furnaceTypes.campfire = false;
-        it.process.furnaceTypes.soul_campfire = false;
-      } else if (ft === "smoker" || ft === "campfire" || ft === "soul_campfire") {
-        it.process.furnaceTypes.blast_furnace = false;
-      }
-    }
-    syncFurnaceGrey();
-    renderYAML(); renderPreview(); save();
-  });
-  syncMinigameFields();
-
-  // ingredients
-  root.appendChild(ingredientsSection(it, root));
+  root.appendChild(craftingSection(it));
 
   // addiction
   const add = it.addiction;
-  root.appendChild(toggleSection("Addiction", add, "enabled", `
+  const addSection = toggleSection("Addiction", add, "enabled", `
     <div class="row">
       <label>Maximum level <input type="number" data-f="maxLevel" min="0" step="0.1" value="${add.maxLevel}"></label>
       <label>Decay per tick <input type="number" data-f="decayPerTick" min="0" step="0.0001" value="${add.decayPerTick}"></label>
@@ -537,10 +632,15 @@ function buildForm() {
     </div>
     <p class="foot-note plain">0 threshold disables overdosing</p>
     <label>Antidote (material or consumable id) <input type="text" data-f="antidote" value="${esc(add.antidote)}" spellcheck="false"></label>
+    <label>Insanity multiplier <input type="number" data-f="insanity" min="0" step="0.1" value="${it.insanity}"></label>
+    <p class="foot-note plain">scales the bad-trip spike a dirty dose gives, and the insanity
+      withdrawal feeds. Only an addictive item can trip, so 0 disables it.</p>
   `, (f, t) => {
-    if (f === "antidote") add.antidote = t.value.trim();
+    if (f === "insanity") it.insanity = Math.max(0, num(t.value, 0));
+    else if (f === "antidote") add.antidote = t.value.trim();
     else add[f] = Math.max(0, num(t.value, 0));
-  }));
+  });
+  if (!vanilla) root.appendChild(addSection);
 
   // Sounds/particles fired on consume / right-click (use) / left-click (punch).
   const evWrap = document.createElement("div");
@@ -549,7 +649,7 @@ function buildForm() {
     <p class="hint">Cosmetic sounds/particles. <code>on_consume</code> fires when eaten,
     <code>on_use</code> on right-click, <code>on_punch</code> on left-click.</p>
     <div class="ev-root"></div>`;
-  root.appendChild(evWrap);
+  if (!vanilla) root.appendChild(evWrap);
   it.events = normalizeEvents(it.events);
   EventsEditor.render(evWrap.querySelector(".ev-root"), it.events, CONSUMABLE_TRIGGERS,
     () => { renderYAML(); save(); });
@@ -605,18 +705,48 @@ function paneify() {
     b.dataset.paneTitle = title;
     b.textContent = title;
     nav.appendChild(b);
-    // The fixed panel header already names the page. Plain section headings
-    // are redundant here; toggle pages keep the control but call it Enabled.
+    // The fixed panel header already names the page, so the in-body heading is
+    // always redundant. A toggle section's switch is not - it moves up into
+    // the header instead (see syncPaneToggle).
     const subHead = el.querySelector(":scope > .sub-head");
-    if (subHead) {
-      if (el.querySelector("[data-toggle]")) head.textContent = "Enabled";
-      else subHead.hidden = true;
-    }
+    if (subHead) subHead.hidden = true;
   });
   const want = root.querySelector(`[data-pane="${openPane}"]`) ? openPane : "s0";
   UI.selectPane(want);
   UI.refresh();
 }
+
+/**
+ * The enable switch currently lifted into the panel header, and the sub-head it
+ * came from, so it can be put back when another pane is selected.
+ * The element is MOVED rather than copied: its change listener is bound to the
+ * input itself, so a clone would look right and do nothing.
+ */
+let liftedToggle = null;
+
+/**
+ * Shows the active pane's enable switch in the panel header, right-aligned,
+ * and returns the previous one to its own section. Panes without a toggle
+ * leave the header slot empty.
+ */
+function syncPaneToggle(key) {
+  const slot = $("pane-toggle");
+  if (!slot) return;
+  if (liftedToggle && liftedToggle.label.parentElement === slot) {
+    liftedToggle.home.appendChild(liftedToggle.label);
+  }
+  liftedToggle = null;
+  slot.hidden = true;
+
+  const pane = $("form-root").querySelector(`[data-pane="${key}"]`);
+  const label = pane ? pane.querySelector(":scope > .sub-head > label.check") : null;
+  if (!label || !label.querySelector("[data-toggle]")) return;
+  liftedToggle = { label, home: label.parentElement };
+  slot.appendChild(label);
+  slot.hidden = false;
+}
+
+document.addEventListener("ui:pane", (e) => syncPaneToggle(e.detail.pane));
 
 /** Render the crafting-effect editor for the item's current mode. */
 function renderCraft(root, ev) {
@@ -684,6 +814,11 @@ function kindOptions(kind) {
 }
 function kindValueLabel(kind) {
   return (INGREDIENT_KINDS.find(k => k[0] === kind) || INGREDIENT_KINDS[0])[2];
+}
+function ingredientKeyList(kind) {
+  return kind === "material" ? "items"
+    : kind === "item" ? "consumables"
+      : kind === "seed" ? "crops" : "";
 }
 function newIngredient(symbol) {
   return { kind: "material", value: "SUGAR", maxUnits: 4, symbol: symbol || "",
@@ -771,65 +906,159 @@ function ingredientChip(rule, i) {
   return canvas;
 }
 
-let smeltWatcher = null; // the live form-wide listener, replaced on rebuild
-
 /**
- * The Ingredients section: a shapeless list, or the shaped 3x3 pattern whose
- * slots open the ingredient picker. `root` is the form, so the section can
- * rebuild itself when the process type switches to (or off) smelt.
+ * The Crafting section: how the item is made, and what it is made from. The two
+ * used to be separate pages, but they constrain each other - a smelt recipe
+ * takes exactly one ingredient and has no grid, a grid recipe can be shaped, and
+ * a minigame recipe has neither - so they are one page, and only the fields the
+ * chosen process actually reads are shown.
  */
-function ingredientsSection(it, root) {
-  const isSmelt = it.process.enabled && it.process.type === "smelt";
-  // Smelting has no crafting grid to lay a pattern out in.
+function craftingSection(it) {
+  const type = it.process.enabled ? it.process.type : "";
+  const isSmelt = type === "smelt";
+  const isMinigame = !!type && !NON_MINIGAME_TYPES.has(type);
+  const durationLabel = DURATION_MEANING[type];
+  // Smelting has no crafting grid to lay a pattern out in, and it is one item
+  // in for one out, so its single ingredient is always a single unit.
   if (isSmelt && it.shaped) { it.shaped = false; it.shape = ["", "", ""]; }
+  if (isSmelt) it.ingredients.forEach(rule => { rule.maxUnits = 1; });
   const shaped = !!it.shaped;
 
-  const ing = section("Ingredients", `
-    <div class="seg" data-sub="mode" ${isSmelt ? "hidden" : ""}>
-      <button type="button" data-mode="shapeless" class="${shaped ? "" : "on"}">Shapeless</button>
-      <button type="button" data-mode="shaped" class="${shaped ? "on" : ""}">Shaped</button>
-    </div>
-    <p class="hint" data-sub="mode-hint"></p>
-    <div class="recipe-grid" data-sub="grid" ${shaped ? "" : "hidden"}></div>
-    <div data-sub="ing-list"></div>
-    <button class="add" data-add-ing>+ ingredient</button>`, () => {});
+  const craft = section("Crafting", `
+    <label>Process <select data-f="type">
+      <option value="" ${type ? "" : "selected"}>none (instant craft)</option>
+      ${PROCESS_TYPES.map(p =>
+        `<option value="${p}" ${type === p ? "selected" : ""}>${p}</option>`).join("")}
+    </select></label>
+    <p class="hint">${processHint(type)}</p>
+    ${isMinigame ? `
+      <div class="row">
+        <label>Difficulty (1-3)
+          <input type="number" data-f="difficulty" min="1" max="3" value="${it.process.difficulty}"></label>
+        <label>Rounds
+          <input type="number" data-f="rounds" min="1" value="${it.process.rounds}"></label>
+      </div>` : ""}
+    ${durationLabel ? `
+      <label>${durationLabel}
+        <span class="input-with-unit"><input type="text" data-f="durationSeconds"
+          value="${esc(it.process.durationSeconds)}" spellcheck="false"
+          aria-label="${durationLabel} in seconds"><span class="input-unit">s</span></span></label>` : ""}
+    ${isSmelt ? `
+      <p class="hint">Allowed heat sources
+        <span class="inline-note">Cannot use both a blast furnace and a smoker/campfire.</span></p>
+      <div class="row">
+        <label class="check"><input type="checkbox" data-ft="furnace"       ${it.process.furnaceTypes?.furnace       !== false ? "checked" : ""}> furnace</label>
+        <label class="check"><input type="checkbox" data-ft="smoker"        ${it.process.furnaceTypes?.smoker        !== false ? "checked" : ""}> smoker</label>
+        <label class="check"><input type="checkbox" data-ft="blast_furnace" ${it.process.furnaceTypes?.blast_furnace !== false ? "checked" : ""}> blast furnace</label>
+        <label class="check"><input type="checkbox" data-ft="campfire"      ${it.process.furnaceTypes?.campfire      !== false ? "checked" : ""}> campfire</label>
+        <label class="check"><input type="checkbox" data-ft="soul_campfire" ${it.process.furnaceTypes?.soul_campfire !== false ? "checked" : ""}> soul campfire</label>
+      </div>` : ""}
 
-  ing.querySelector("[data-sub=mode-hint]").textContent = isSmelt
+    <div class="subsection">
+      <div class="sub-head"><strong>Ingredients</strong><span class="grow"></span></div>
+      <label>Output amount
+        <input type="text" data-f="outputAmount" value="${esc(it.outputAmount)}" spellcheck="false"></label>
+      <p class="foot-note plain">how many one craft yields: a number, or <code>per_unit</code> for one
+        per ingredient unit consumed</p>
+      <div class="seg" data-sub="mode" ${isSmelt ? "hidden" : ""}>
+        <button type="button" data-mode="shapeless" class="${shaped ? "" : "on"}">Shapeless</button>
+        <button type="button" data-mode="shaped" class="${shaped ? "on" : ""}">Shaped</button>
+      </div>
+      <p class="hint" data-sub="mode-hint"></p>
+      <div class="recipe-grid" data-sub="grid" ${shaped ? "" : "hidden"}></div>
+      <div data-sub="ing-list"></div>
+      <button class="add" data-add-ing>+ ingredient</button>
+    </div>`,
+    (f, t) => {
+      if (f === "type") {
+        // "none" is the absence of a process, and the field set depends on the
+        // type, so the whole section is rebuilt around the new choice.
+        it.process.enabled = !!t.value;
+        if (t.value) it.process.type = t.value;
+        changed(true);
+      } else if (f === "difficulty") {
+        it.process.difficulty = clamp(num(t.value, 2), 1, 3);
+      } else if (f === "outputAmount") {
+        it.outputAmount = t.value;
+      } else if (f === "rounds") {
+        it.process.rounds = Math.max(1, Math.round(num(t.value, 1)));
+      } else if (f === "durationSeconds") {
+        it.process.durationSeconds = t.value;
+      }
+    });
+
+  craft.querySelector("[data-sub=mode-hint]").textContent = isSmelt
     ? "Smelt recipes accept exactly one ingredient."
     : shaped
       ? "Fill the slots the way the recipe must be laid out in a crafting grid. A slot opens its ingredient."
       : "Any layout crafts this, as long as every ingredient is in the grid. Up to nine.";
 
-  const grid = ing.querySelector("[data-sub=grid]");
+  const grid = craft.querySelector("[data-sub=grid]");
   if (shaped) {
     for (let r = 0; r < 3; r++) {
       for (let c = 0; c < 3; c++) grid.appendChild(recipeSlot(it, r, c));
     }
   }
 
-  const ingRoot = ing.querySelector("[data-sub=ing-list]");
+  const ingRoot = craft.querySelector("[data-sub=ing-list]");
   it.ingredients.forEach((rule, i) => ingRoot.appendChild(ingredientCard(it, rule, i)));
 
   // Shaped recipes gain their ingredients through the slots, so the plain add
   // button belongs to the shapeless list only.
-  const addBtn = ing.querySelector("[data-add-ing]");
+  const addBtn = craft.querySelector("[data-add-ing]");
   const full = it.ingredients.length >= (isSmelt ? 1 : MAX_INGREDIENTS);
   addBtn.style.display = shaped || full ? "none" : "";
   addBtn.onclick = () => { it.ingredients.push(newIngredient("")); changed(true); };
 
-  ing.querySelectorAll("[data-sub=mode] button").forEach(button => {
+  craft.querySelectorAll("[data-sub=mode] button").forEach(button => {
     button.onclick = () => setShapedMode(it, button.dataset.mode === "shaped");
   });
 
-  // The process type lives in another section, so watch the whole form for a
-  // switch into or out of smelt and rebuild on the flip. The form element
-  // outlives its markup, so the previous rebuild's watcher comes off first.
-  if (smeltWatcher) root.removeEventListener("input", smeltWatcher);
-  smeltWatcher = () => {
-    if ((it.process.enabled && it.process.type === "smelt") !== isSmelt) changed(true);
-  };
-  root.addEventListener("input", smeltWatcher);
-  return ing;
+  // Blast furnace (ore group, RAW_IRON base) and the campfire/smoker heat sources
+  // (food group, raw-meat base) are mutually exclusive - no single cookable base
+  // works in both. Grey out the opposing group once the author commits to one side
+  // (furnace is shared and always available). A legacy all-selected draft greys
+  // nothing until the first toggle resolves it.
+  function furnaceChecked(k) {
+    const ft = it.process.furnaceTypes || {};
+    return ft[k] !== false;
+  }
+  function syncFurnaceGrey() {
+    const oreOn = furnaceChecked("blast_furnace");
+    const flameOn = furnaceChecked("smoker") || furnaceChecked("campfire") || furnaceChecked("soul_campfire");
+    const disableFlame = oreOn && !flameOn;
+    const disableOre = flameOn && !oreOn;
+    craft.querySelectorAll("input[data-ft]").forEach(cb => {
+      const k = cb.dataset.ft;
+      const dis = k === "blast_furnace" ? disableOre
+        : (k === "smoker" || k === "campfire" || k === "soul_campfire") ? disableFlame
+        : false;
+      cb.disabled = dis;
+      cb.checked = furnaceChecked(k);
+      const label = cb.closest("label");
+      if (label) label.style.opacity = dis ? "0.4" : "";
+    });
+  }
+  craft.addEventListener("input", (e) => {
+    const ft = e.target.dataset.ft;
+    if (!ft) return;
+    it.process.furnaceTypes = it.process.furnaceTypes || {};
+    it.process.furnaceTypes[ft] = e.target.checked;
+    if (e.target.checked) {
+      if (ft === "blast_furnace") {
+        it.process.furnaceTypes.smoker = false;
+        it.process.furnaceTypes.campfire = false;
+        it.process.furnaceTypes.soul_campfire = false;
+      } else if (ft === "smoker" || ft === "campfire" || ft === "soul_campfire") {
+        it.process.furnaceTypes.blast_furnace = false;
+      }
+    }
+    syncFurnaceGrey();
+    renderYAML(); renderPreview(); save();
+  });
+  if (isSmelt) syncFurnaceGrey();
+
+  return craft;
 }
 
 function setShapedMode(it, shaped) {
@@ -909,7 +1138,8 @@ function openSlotPicker(it, r, c) {
       form.innerHTML = `
         <label>New ingredient <select data-n="kind">${kindOptions(draft.kind)}</select></label>
         <label data-sub="value">${kindValueLabel(draft.kind)}
-          <input type="text" data-n="value" value="${esc(draft.value)}" spellcheck="false" data-keys="items"></label>`;
+          <input type="text" data-n="value" value="${esc(draft.value)}" spellcheck="false"
+            data-keys="${ingredientKeyList(draft.kind)}"></label>`;
       form.addEventListener("input", (e) => {
         const f = e.target.dataset.n;
         if (!f) return;
@@ -918,8 +1148,8 @@ function openSlotPicker(it, r, c) {
         const label = form.querySelector("[data-sub=value]");
         const input = label.querySelector("input");
         label.firstChild.nodeValue = kindValueLabel(draft.kind);
-        // Only vanilla materials have a key list to complete against.
-        if (draft.kind === "material") input.dataset.keys = "items";
+        const keyList = ingredientKeyList(draft.kind);
+        if (keyList) input.dataset.keys = ingredientKeyList(draft.kind);
         else delete input.dataset.keys;
       });
       const addBtn = document.createElement("button");
@@ -967,12 +1197,17 @@ function ingredientCard(it, rule, i) {
     </div>
     <div class="row">
       <label>${kindValueLabel(rule.kind)}
-        <input type="text" data-f="value" value="${esc(rule.value)}" spellcheck="false" ${rule.kind === "material" ? 'data-keys="items"' : ""}></label>
-      <label>max units <input type="number" data-f="maxUnits" min="1" value="${rule.maxUnits}"></label>
+        <input type="text" data-f="value" value="${esc(rule.value)}" spellcheck="false"
+          ${ingredientKeyList(rule.kind) ? `data-keys="${ingredientKeyList(rule.kind)}"` : ""}></label>
+      ${it.process.enabled && it.process.type === "smelt" ? "" :
+        `<label>max units <input type="number" data-f="maxUnits" min="1" value="${rule.maxUnits}"></label>`}
     </div>
+    ${it.addiction.enabled ? `
     <div class="row">
       <label>addictiveness <input type="number" data-f="addictiveness" min="0" max="1" step="0.01" value="${rule.addictiveness}"></label>
     </div>
+    <p class="foot-note plain">how much of the habit this ingredient carries. The units in a craft add
+      up to the dose's strength, capped at the maximum level on the Addiction page.</p>` : ""}
     <div data-sub="effects"></div>
     <button class="add" data-add-eff>+ consume effect (scales with units)</button>`;
   card.addEventListener("input", (e) => {
@@ -1139,6 +1374,26 @@ function paintModelChip() {
   else { c.fillStyle = MCAssets.colorFor(cur().model); c.fillRect(2, 2, 12, 12); }
 }
 
+/**
+ * The lore strings the plugin writes, copied from messages.yml. Kept verbatim so
+ * the preview reads exactly like the item does in game; ConsumableDesignerParity
+ * covers the copy.
+ */
+const MSG = {
+  lore_quality_pending: "Quality decided by your preparation",
+  lore_effects: "Effects:",
+  lore_effect_for: "  {effect} for ",
+  lore_ingredient: "Crafting ingredient",
+  lore_toxic: "\u2620 Toxic to carry ({grace}s grace)",
+  lore_perishable: "\u231b Perishable, spoils in {time}",
+  lore_addictive: "\u26a0 Addictive",
+};
+
+/** ConsumableFactory.toRoman, for the effect level suffix. */
+function roman(n) {
+  return ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"][n] || String(n);
+}
+
 function renderPreview() {
   const it = cur();
   const root = $("tooltip-preview");
@@ -1148,30 +1403,62 @@ function renderPreview() {
       Add or upload a consumable to see its in-game item tooltip.</div>`;
     return;
   }
+  // A vanilla output reaches the player as a plain ItemStack, so its tooltip is
+  // whatever vanilla shows: no custom name, no lore, no model.
+  if (it.outputMode === "vanilla") {
+    const mat = (it.outputItem || "").trim();
+    root.innerHTML = `<canvas class="big-tex" width="16" height="16"></canvas>
+      <div class="t-name">${esc(mat ? prettify(mat.toLowerCase()) : "(no vanilla item chosen)")}</div>
+      <div class="t-source">Plain vanilla item · only the craft message uses the display name</div>`;
+    paintPreviewModel(root.querySelector(".big-tex"), { model: mat, headTexture: "" });
+    return;
+  }
+  // This mirrors ConsumableFactory.buildStatusBlock line for line: the tooltip
+  // is meant to be what the item looks like in game, not a summary of the form.
+  // It shows the crafting-output state (isPreview), the one the designer can
+  // know from config alone - no quality rolled yet, so effect durations are
+  // unscaled and the perishable line shows the full configured lifetime.
   const lines = [];
-  if (it.description.trim()) lines.push(`<div class="t-desc">${LegacyText.toHtml(it.description, esc)}</div>`);
-  if (it.food.enabled) {
-    lines.push(`<div class="t-line">Food · ${it.food.nutrition} nutrition · ${it.food.seconds}s ${it.food.animation}</div>`);
+
+  if (it.description.trim()) {
+    // The quote marks are the plugin's, and stay gray italic whatever the
+    // description's own codes do.
+    lines.push(`<div class="t-desc">"${LegacyText.toHtml(it.description, esc)}"</div>`);
   }
-  if (it.perishable.enabled) {
-    lines.push(`<div class="t-gold">Perishable · spoils in ${it.perishable.lifetimeMinutes}m</div>`);
-  }
-  if (it.toxic.enabled) {
-    lines.push(`<div class="t-warn">Toxic after ${it.toxic.grace}s · `
-      + it.toxic.effects.map(e => e.type).join(", ") + `</div>`);
-  }
+
   if (it.process.enabled) {
-    const procLabel = NON_MINIGAME_TYPES.has(it.process.type)
-      ? `Process · ${it.process.type} (automatic)`
-      : `Process · ${it.process.type} · difficulty ${it.process.difficulty}`;
-    lines.push(`<div class="t-gold">${procLabel}</div>`);
+    lines.push(`<div class="t-pending">${esc(MSG.lore_quality_pending)}</div>`);
   }
+
+  const withEffects = it.ingredients.filter(r => (r.effects || []).length);
+  if (withEffects.length) {
+    lines.push(`<div class="t-effects">${esc(MSG.lore_effects)}</div>`);
+    for (const rule of withEffects) {
+      for (const eff of rule.effects) {
+        // units default to 1 in a preview, so only the base values show.
+        const seconds = Math.round(num(eff.base_duration, 0)) / 20;
+        const amp = clamp(num(eff.base_amplifier, 0), 0, num(eff.amplifier_cap, 0));
+        const level = amp > 0 ? " " + roman(amp + 1) : "";
+        lines.push(`<div class="t-effect">${esc(MSG.lore_effect_for.replace("{effect}",
+          prettify(eff.type) + level))}<span class="t-effect-time">${seconds}s</span></div>`);
+      }
+    }
+  } else if (!it.food.enabled) {
+    lines.push(`<div class="t-pending">${esc(MSG.lore_ingredient)}</div>`);
+  }
+
+  if (it.toxic.enabled) {
+    lines.push(`<div class="t-toxic">${esc(MSG.lore_toxic.replace("{grace}", it.toxic.grace))}</div>`);
+  }
+
+  if (it.perishable.enabled) {
+    lines.push(`<div class="t-gold">${esc(MSG.lore_perishable.replace("{time}",
+      Lifetimes.format(it.perishable.lifetimeMinutes)))}</div>`);
+  }
+
   if (it.addiction.enabled) {
-    lines.push(`<div class="t-warn">Addictive${it.addiction.overdoseThreshold > 0 ? " · can overdose" : ""}</div>`);
+    lines.push(`<div class="t-warn">${esc(MSG.lore_addictive)}</div>`);
   }
-  const ingredients = it.ingredients
-    .map(r => `${r.maxUnits}× ${r.value}`).join(", ");
-  if (ingredients) lines.push(`<div class="t-source">From: ${esc(ingredients)}</div>`);
 
   root.innerHTML = `<canvas class="big-tex" width="16" height="16"></canvas>
     <div class="t-name">${LegacyText.toHtml(it.name || prettify(it.id), esc)}</div>${lines.join("")}`;
@@ -1191,29 +1478,45 @@ function yamlOut() {
   L.push(`consumables:`);
   for (const it of state.items) {
     L.push(``);
+    // A vanilla output ignores every key the plugin would stamp onto the item,
+    // so they are left out rather than written and silently dropped at load.
+    const vanilla = it.outputMode === "vanilla" && !!(it.outputItem || "").trim();
     L.push(`  ${it.id || "unnamed"}:`);
     L.push(`    display_name: ${q(it.name)}`);
-    if (it.description.trim()) L.push(`    description: ${q(it.description)}`);
-    if ((it.headTexture || "").trim()) L.push(`    head_texture: ${q(it.headTexture.trim())}`);
-    else if (it.model.trim()) L.push(`    item_model: ${it.model.trim()}`);
+    if (!vanilla && it.description.trim()) L.push(`    description: ${q(it.description)}`);
+    if (!vanilla && (it.headTexture || "").trim()) L.push(`    head_texture: ${q(it.headTexture.trim())}`);
+    else if (!vanilla && it.model.trim()) L.push(`    item_model: ${it.model.trim()}`);
     const out = it.outputAmount.trim();
     if (out && out !== "1") L.push(`    output_amount: ${/^\d+$/.test(out) ? out : "per_unit"}`);
-    if ((it.outputItem || "").trim()) L.push(`    output_item: ${it.outputItem.trim().toUpperCase()}`);
-    if (+it.insanity !== 0) L.push(`    insanity_multiplier: ${it.insanity}`);
+    if (vanilla) L.push(`    output_item: ${it.outputItem.trim().toUpperCase()}`);
+    // Insanity only ever reaches a player through an addictive dose, so the key
+    // does nothing without an addiction block to hang it on.
+    if (!vanilla && it.addiction.enabled && +it.insanity !== 0) {
+      L.push(`    insanity_multiplier: ${it.insanity}`);
+    }
 
-    if (it.food.enabled) {
+    if (!vanilla && it.food.enabled) {
       L.push(`    food:`);
       L.push(`      nutrition: ${it.food.nutrition}`);
       L.push(`      saturation: ${it.food.saturation}`);
       L.push(`      seconds: ${it.food.seconds}`);
       L.push(`      animation: ${it.food.animation}`);
+      // Only written when it differs from what the animation already implies,
+      // so a plain eat/drink item stays as terse as it was before.
+      if (!!it.food.consumeParticles !== defaultConsumeParticles(it.food.animation)) {
+        L.push(`      consume_particles: ${!!it.food.consumeParticles}`);
+      }
+      const cs = String(it.food.consumeSound || "").trim();
+      if (cs && cs !== defaultConsumeSound(it.food.animation)) {
+        L.push(`      consume_sound: ${cs.toLowerCase() === "none" ? "none" : cs.toUpperCase()}`);
+      }
       L.push(`      can_always_eat: ${it.food.alwaysEat}`);
     }
-    if (it.perishable.enabled) {
+    if (!vanilla && it.perishable.enabled) {
       L.push(`    perishable:`);
       L.push(`      lifetime_minutes: ${it.perishable.lifetimeMinutes}`);
     }
-    if (it.toxic.enabled) {
+    if (!vanilla && it.toxic.enabled) {
       L.push(`    toxic:`);
       L.push(`      grace_seconds: ${it.toxic.grace}`);
       if (it.toxic.effects.length) {
@@ -1230,7 +1533,7 @@ function yamlOut() {
       L.push(`      type: ${it.process.type}`);
       if (!NON_MINIGAME_TYPES.has(it.process.type)) {
         L.push(`      difficulty: ${it.process.difficulty}`);
-        if (String(it.process.rounds).trim()) L.push(`      rounds: ${parseInt(it.process.rounds, 10) || 1}`);
+        L.push(`      rounds: ${Math.max(1, parseInt(it.process.rounds, 10) || 1)}`);
       }
       if (String(it.process.durationSeconds).trim()) L.push(`      duration_seconds: ${parseInt(it.process.durationSeconds, 10) || 10}`);
       if (it.process.type === "smelt") {
@@ -1249,7 +1552,11 @@ function yamlOut() {
         L.push(`      - ${key}: ${val}`);
         L.push(`        max_units: ${r.maxUnits}`);
         if (it.shaped && r.symbol) L.push(`        symbol: ${q(r.symbol)}`);
-        if (r.addictiveness > 0) L.push(`        addictiveness: ${r.addictiveness}`);
+        // Dead config without an addiction profile: the plugin scores effective
+        // addictiveness as zero for a non-addictive item whatever the units say.
+        if (it.addiction.enabled && r.addictiveness > 0) {
+          L.push(`        addictiveness: ${r.addictiveness}`);
+        }
         if (r.effects.length) {
           L.push(`        effects:`);
           for (const e of r.effects) {
@@ -1269,7 +1576,7 @@ function yamlOut() {
       for (const row of shapeRows) L.push(`      - ${q(row)}`);
     }
     const a = it.addiction;
-    if (a.enabled) {
+    if (!vanilla && a.enabled) {
       L.push(`    addiction:`);
       L.push(`      max_level: ${a.maxLevel}`);
       L.push(`      decay_per_tick: ${a.decayPerTick}`);
@@ -1284,8 +1591,8 @@ function yamlOut() {
         if (a.antidote) L.push(`      antidote: ${a.antidote}`);
       }
     }
-    L.push(...eventsYaml(it.events, "    "));
-    if ((it.diet || "").trim()) {
+    L.push(...eventsYaml(it.events, "    ", vanilla));
+    if (!vanilla && (it.diet || "").trim()) {
       L.push(`    mcmmo:`);
       L.push(`      diet: ${it.diet.trim()}`);
     }

@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Consumable Designer</title>
 <link rel="icon" type="image/png" href="../shared/c4-mark.png?v=4">
-<link rel="stylesheet" href="../shared/common.css?v=34">
+<script src="../shared/theme-boot.js?v=1"></script>
+<link rel="stylesheet" href="../shared/common.css?v=41">
 <style>
   /* item tooltip mock */
   #tooltip-preview {
@@ -23,12 +24,26 @@
     display: block;
     margin: 0 auto 12px;
   }
-  #tooltip-preview .t-name { color: #55ff55; font-size: 15px; margin-bottom: 6px; }
+  /* One class per lore line the plugin writes, in that line's own vanilla
+     colour and italic state - see ConsumableFactory.buildStatusBlock. */
+  #tooltip-preview .t-name { color: #ffffff; font-size: 15px; margin-bottom: 6px; }
+  #tooltip-preview > div:not(.t-name) { font-size: 12px; margin-top: 4px; }
+  /* GRAY, italic */
   #tooltip-preview .t-desc { color: #aaaaaa; font-style: italic; font-size: 12.5px; }
-  #tooltip-preview .t-line { color: #5555ff; font-size: 12px; margin-top: 4px; }
-  #tooltip-preview .t-warn { color: #ff5555; font-size: 12px; margin-top: 4px; }
-  #tooltip-preview .t-gold { color: #ffaa00; font-size: 12px; margin-top: 4px; }
-  #tooltip-preview .t-source { color: #8a94a1; font-size: 12px; margin-top: 4px; }
+  /* DARK_GRAY, italic */
+  #tooltip-preview .t-pending { color: #555555; font-style: italic; }
+  /* GRAY, upright */
+  #tooltip-preview .t-effects, #tooltip-preview .t-effect { color: #aaaaaa; white-space: pre; }
+  /* the duration is WHITE where the rest of the line is gray */
+  #tooltip-preview .t-effect-time { color: #ffffff; }
+  /* DARK_GREEN */
+  #tooltip-preview .t-toxic { color: #00aa00; }
+  /* RED */
+  #tooltip-preview .t-warn { color: #ff5555; }
+  /* GOLD */
+  #tooltip-preview .t-gold { color: #ffaa00; }
+  /* not a lore line: the note under a plain vanilla output */
+  #tooltip-preview .t-source { color: #8a94a1; }
   #tooltip-preview.is-empty {
     min-width: 0; max-width: 390px; padding: 18px; border: 0; outline: 0;
     background: transparent; color: var(--muted); text-align: center;
@@ -76,13 +91,13 @@
       <div id="tooltip-preview"></div>
     </div>
     <div id="view-controls">
-      <div class="foot"><span class="hint">live item preview</span></div>
+      <div class="foot"><span class="hint">the item as it looks in the crafting output, before a quality is rolled</span></div>
     </div>
   </section>
 
   <aside class="panel-col">
     <button class="backslab" data-back><svg class="i" viewBox="0 0 24 24"><path d="M15.4 4 7.4 12l8 8 1.4-1.4L10.2 12l6.6-6.6z"/></svg> Back to outline</button>
-    <div class="phead"><b id="pane-title">Identity</b><span class="grow"></span></div>
+    <div class="phead"><b id="pane-title">Identity</b><span class="grow"></span><span id="pane-toggle" hidden></span></div>
     <div class="pbody">
       <div id="form-root"></div>
     </div>
@@ -100,16 +115,20 @@
   <button data-screen="detail">Edit</button>
 </nav>
 
-<script src="../shared/ui.js?v=18"></script>
-<script src="../shared/mc-assets.js?v=7"></script>
+<script src="../shared/ui.js?v=20"></script>
+<script src="../shared/mc-assets.js?v=12"></script>
 <script src="../shared/yaml-lite.js?v=3"></script>
-<script src="../shared/events-editor.js?v=3"></script>
-<script src="../shared/mc-keys.js?v=6"></script>
-<script src="../shared/key-picker.js?v=4"></script>
+<!-- The shipped config.yml verbatim; lifetimes.js samples its vanilla_foods
+     block so the example lifetimes track the real config. -->
+<script src="../config-editor/default-config.js?v=1"></script>
+<script src="../shared/lifetimes.js?v=4"></script>
+<script src="../shared/events-editor.js?v=5"></script>
+<script src="../shared/mc-keys.js?v=7"></script>
+<script src="../shared/key-picker.js?v=6"></script>
 <script src="../shared/file-dock.js?v=1"></script>
 <script src="../shared/file-store.js?v=1"></script>
 <script src="../shared/legacy-text.js?v=1"></script>
-<script src="app.js?v=24"></script>
+<script src="app.js?v=40"></script>
 <script>UI.initShell();</script>
 </body>
 </html>

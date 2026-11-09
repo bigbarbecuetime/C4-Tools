@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Crop Designer</title>
 <link rel="icon" type="image/png" href="../shared/c4-mark.png?v=4">
-<link rel="stylesheet" href="../shared/common.css?v=34">
+<script src="../shared/theme-boot.js?v=1"></script>
+<link rel="stylesheet" href="../shared/common.css?v=41">
 </head>
 <body data-screen="outline">
 <div class="app">
@@ -106,7 +107,10 @@
           <p class="hint warn" id="farmland-warning" hidden></p>
           <p class="hint">Use <code>minecraft</code> for normal farmland. Upload a custom farmland file from the
           <a href="../farmland-designer/index.html">farmland designer</a> to use another type.</p>
-          <label>Total minutes <input id="crop-minutes" type="number" min="0.1" step="0.5"></label>
+          <label>Total growth time
+            <span class="input-with-unit"><input id="crop-minutes" type="number" min="0.1" step="0.5"
+              aria-label="Total growth time in minutes"><span class="input-unit">min</span></span>
+            <output class="duration-readout" id="crop-minutes-readable"></output></label>
           <label>Min light <span class="meter-with-source"><canvas id="light-source-chip" class="meter-source-chip" width="16" height="16" title="Lantern: light level 15"></canvas><input id="crop-light" type="number" min="0" max="15" step="1" data-range data-cells="16" data-meter="light" data-reverse></span></label>
           <label><span id="hydration-label">Min water</span><input id="crop-water" type="number" min="0" max="1" step="0.05" data-range data-meter="water"></label>
           <label class="check"><input id="crop-netheronly" type="checkbox"> Nether only</label>
@@ -264,17 +268,19 @@
   <button data-screen="detail">Edit</button>
 </nav>
 
-<script src="../shared/mc-assets.js?v=7"></script>
+<script src="../shared/mc-assets.js?v=12"></script>
 <script src="../shared/yaml-lite.js?v=3"></script>
-<script src="../shared/events-editor.js?v=3"></script>
-<script src="../shared/mc-keys.js?v=6"></script>
-<script src="../shared/key-picker.js?v=4"></script>
+<script src="../shared/events-editor.js?v=5"></script>
+<script src="../shared/mc-keys.js?v=7"></script>
+<script src="../shared/key-picker.js?v=6"></script>
 <script src="../shared/file-dock.js?v=1"></script>
 <script src="../shared/file-store.js?v=1"></script>
 <script src="../shared/legacy-text.js?v=1"></script>
-<script src="../shared/ui.js?v=18"></script>
-<script src="app.js?v=46"></script>
-<script src="gizmo.js?v=9"></script>
+<script src="../shared/ui.js?v=20"></script>
+<script src="preview-gl.js?v=3"></script>
+<script src="../shared/lifetimes.js?v=4"></script>
+<script src="app.js?v=54"></script>
+<script src="gizmo.js?v=10"></script>
 <script>UI.initShell({ pane: "crop" });</script>
 </body>
 </html>

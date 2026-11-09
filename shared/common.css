@@ -106,6 +106,7 @@ svg.i.sm { width: 15px; height: 15px; }
 .appbar .mark img, header .mark img { width: 100%; height: 100%; display: block; object-fit: contain; }
 .appbar .mark:hover, header .mark:hover { filter: brightness(1.12); }
 .appbar h1, header h1 { margin: 0; font: 700 14px var(--ui); letter-spacing: .03em; white-space: nowrap; }
+.appbar .sub, header .sub { color: var(--muted); font-size: 12px; white-space: nowrap; }
 
 /* ── 4  outline ─────────────────────────────────────────────────────────── */
 .outline {
@@ -119,6 +120,12 @@ svg.i.sm { width: 15px; height: 15px; }
 .ohead h1 { margin: 0; font: 700 12px var(--ui); letter-spacing: .1em; text-transform: uppercase; }
 .phead b { font-size: 13.5px; }
 .phead .kind { font: 10px var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+/* A collapsible pane's enable switch, relocated from its section body into the
+   panel header. The label still carries the section title for the nav to read,
+   but the header already shows that, so only the switch itself is drawn. */
+#pane-toggle[hidden] { display: none; }
+#pane-toggle label.check { gap: 0; }
+#pane-toggle label.check strong { display: none; }
 .tree { flex: 1; overflow-y: auto; padding: 7px; }
 .ofoot {
   flex-shrink: 0; padding: 8px; border-top: 1px solid var(--line); background: var(--panel2);
@@ -190,6 +197,10 @@ h2 {
 h3.sub { font: 600 11px var(--ui); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 12px 0 5px; }
 
 .form-grid { display: flex; flex-direction: column; gap: 9px; }
+/* A collapsed toggleSection body carries [hidden]; without this the rule above
+   (a class selector with display:flex) outranks the UA's [hidden] rule and the
+   section never actually collapses. */
+.form-grid[hidden] { display: none; }
 label { display: flex; flex-direction: column; gap: 5px; font-size: 11.5px; color: var(--muted); line-height: 1.4; }
 label.check { flex-direction: row; align-items: center; gap: 8px; color: var(--text); font-size: 12.5px; }
 label.check.inline { display: inline-flex; margin-left: 8px; font-size: 11px; color: var(--muted); }
@@ -199,6 +210,38 @@ label + .foot-note.plain, .foot-note.plain { padding-left: 0; }
 
 .hint { color: var(--muted); font-size: 11.5px; line-height: 1.55; margin: 2px 0 4px; }
 .hint.warn, .warn { color: var(--warn); }
+
+/* Compact reference table for the hint areas of a form (vanilla food values,
+   and anything else that reads better as columns than as a run-on sentence). */
+.ref-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 2px 0 6px;
+  /* Longhands, not the `font` shorthand: a var() family in the shorthand does
+     not reliably survive substitution, and the numbers want a mono face. */
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.ref-table caption {
+  caption-side: top;
+  text-align: left;
+  padding-bottom: 3px;
+  font-family: var(--ui);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.ref-table th, .ref-table td {
+  padding: 1px 8px 1px 0;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+}
+.ref-table th:first-child, .ref-table td:first-child { text-align: left; width: 100%; }
+.ref-table thead th { color: var(--muted2); font-weight: 400; }
+.ref-table tbody tr:last-child th, .ref-table tbody tr:last-child td { border-bottom: 0; }
+.ref-table tbody th { font-weight: 400; color: var(--text); }
 .warning-box {
   margin-top: 8px; padding: 8px 10px; color: var(--warn); font-size: 11.5px;
   background: color-mix(in srgb, var(--warn) 8%, var(--field));
@@ -340,7 +383,6 @@ button.copy.copied { color: var(--accent); }
   outline: none;
   box-shadow: inset 2px 2px 0 var(--edge-d), inset -2px -2px 0 var(--edge-l), inset 0 0 0 1px var(--accent);
 }
-.fmt-view:empty::before { content: "click to name it"; color: var(--muted2); font-style: italic; text-shadow: none; }
 .fmt > input { display: none; }
 .fmt.editing > input { display: block; }
 .fmt.editing > .fmt-view { display: none; }
@@ -590,8 +632,23 @@ body[data-hydration="lava"] #water-slider { accent-color: var(--lava); }
   background: var(--sunk); box-shadow: inset 1px 1px 0 var(--edge-d), inset -1px -1px 0 var(--edge-l);
 }
 .duration-readout { min-height: 1.4em; color: var(--accent2); font: 10.5px/1.4 var(--mono); }
-.config-duration-row { align-items: flex-start; margin-bottom: 6px; }
-.config-duration-row > input:first-child { margin-top: 18px; }
+/* An explicit three-column grid rather than a flex row: the caption and the
+   readout occupy their own rows, so the two fields and the delete button all
+   centre on the middle row without any hand-tuned offsets. */
+.config-duration-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(130px, 0.8fr) auto;
+  column-gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.config-duration-row > .duration-caption {
+  grid-area: 1 / 2; font-size: 11.5px; color: var(--muted); line-height: 1.4;
+}
+.config-duration-row > input[data-k]      { grid-area: 2 / 1; }
+.config-duration-row > .input-with-unit   { grid-area: 2 / 2; }
+.config-duration-row > .row-delete        { grid-area: 2 / 3; align-self: center; margin: 0; }
+.config-duration-row > .duration-readout  { grid-area: 3 / 2; }
 .config-duration-row .duration-cell { flex: 1; min-width: 145px; }
 
 /* a bare range (water content, brush size, ...) */
@@ -745,15 +802,6 @@ main > .panel { padding: 12px 13px 24px; overflow-y: auto; }
 }
 .preview-side canvas { max-width: 100%; cursor: grab; }
 
-/* page header used by the not-yet-reshelled tools */
-header {
-  display: flex; align-items: center; gap: 12px; padding: 0 14px; height: 52px;
-  background: var(--chrome); border-bottom: 1px solid var(--line);
-}
-header .mark { width: 34px; height: 34px; display: block; }
-header .mark img { width: 100%; height: 100%; display: block; object-fit: contain; }
-header h1 { font: 700 14px var(--ui); margin: 0; letter-spacing: .04em; }
-header .sub { color: var(--muted); font-size: 12px; }
 .header-actions { margin-left: auto; display: flex; gap: 6px; }
 nav.suite { display: flex; gap: 2px; margin-left: 6px; }
 nav.suite a {

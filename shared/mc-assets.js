@@ -16,10 +16,10 @@
 
 const MCAssets = (() => {
   // Game versions to try, newest first. The first entry should match the
-  // server (run/ targets Paper 26.1.2); older versions are fallbacks for
+  // server (run/ targets Paper 26.3); older versions are fallbacks for
   // when a mirror doesn't have the newest branch yet - most block/item
   // textures haven't changed in years, so older copies render identically.
-  const VERSIONS = ["26.1.2", "26.1", "1.21.4", "1.21.1"];
+  const VERSIONS = ["26.3", "26.2", "26.1.2", "26.1", "1.21.4", "1.21.1"];
 
   // Vanilla client assets served by mcasset.cloud -
   // https://mcasset.cloud/<version>/ is the browser UI; raw files come from
@@ -35,16 +35,26 @@ const MCAssets = (() => {
   // Grayscale foliage/grass textures that need a biome tint to look right.
   const TINTS = {
     short_grass: "#7cbd6b", tall_grass: "#7cbd6b", grass: "#7cbd6b",
+    tall_grass_bottom: "#7cbd6b", tall_grass_top: "#7cbd6b",
     fern: "#7cbd6b", large_fern: "#7cbd6b", vine: "#48b518",
+    large_fern_bottom: "#7cbd6b", large_fern_top: "#7cbd6b",
+    bush: "#7cbd6b", bamboo_sapling: "#7cbd6b",
     oak_leaves: "#48b518", jungle_leaves: "#48b518", acacia_leaves: "#5ca328",
     dark_oak_leaves: "#48b518", mangrove_leaves: "#48b518",
     lily_pad: "#208030", melon_stem: "#5ca328", pumpkin_stem: "#5ca328",
-    attached_melon_stem: "#5ca328", attached_pumpkin_stem: "#5ca328",
+    attached_melon_stem: "#e0c71c", attached_pumpkin_stem: "#e0c71c",
     grass_block_top: "#7cbd6b", sugar_cane: "#7cbd6b",
     // Water ships grayscale too and is tinted per biome; #3f76e4 is the
     // default most biomes use. Lava is already coloured and takes no tint.
     water: "#3f76e4", water_still: "#3f76e4", water_flow: "#3f76e4",
   };
+
+  // Vanilla model bindings whose logical face textures do not follow the
+  // usual <block>_top/<block>_side filename convention.
+  const BLOCK_FACE_TEXTURES = Object.freeze({
+    farmland: { top: "farmland", side: "dirt", bottom: "dirt" },
+    farmland_moist: { top: "farmland_moist", side: "dirt", bottom: "dirt" },
+  });
 
   const COLOR_KEYWORDS = [
     ["cactus", "#5b8f2f"], ["short_grass", "#6fa841"], ["tall_grass", "#6fa841"],
@@ -74,8 +84,24 @@ const MCAssets = (() => {
   // Vanilla plant blocks that render as flat planes instead of cubes, with
   // per-age stage textures. "hash" = the # pattern of the vanilla crop model,
   // "cross" = two diagonal planes. stages[] maps block age -> texture index.
-  // "tex" overrides the texture (blocks with one texture for every age);
-  // "grows" scales the plane height by age, like the vanilla stem models.
+  // "tex" overrides the texture (blocks with one texture for every age).
+  const STEM_RENDER = Object.freeze({
+    bottom: -1 / 16,
+    tops: [1, 3, 5, 7, 9, 11, 13, 15],
+    textureRows: [2, 4, 6, 8, 10, 12, 14, 16],
+    planeRadius: 0.5,
+    colors: [
+      "#00ff00", "#20f704", "#40ef08", "#60e70c",
+      "#80df10", "#a0d714", "#c0cf18", "#e0c71c",
+    ],
+  });
+
+  const SIMPLE_PLANT_RENDER = Object.freeze({
+    crossRadius: 0.45,
+    cropBottom: -1 / 16,
+    cropTop: 15 / 16,
+  });
+
   const PLANT_BLOCKS = {
     wheat:            { shape: "hash",  stages: [0, 1, 2, 3, 4, 5, 6, 7] },
     carrots:          { shape: "hash",  stages: [0, 0, 1, 1, 2, 2, 2, 3] },
@@ -83,36 +109,39 @@ const MCAssets = (() => {
     beetroots:        { shape: "hash",  stages: [0, 1, 2, 3] },
     nether_wart:      { shape: "hash",  stages: [0, 1, 1, 2] },
     sweet_berry_bush: { shape: "cross", stages: [0, 1, 2, 3] },
-    // Gourd stems are a tinted X whose single texture grows in height with
-    // age; attached stems (after a fruit forms) use their own texture.
-    pumpkin_stem:          { shape: "cross", stages: [0, 1, 2, 3, 4, 5, 6, 7], tex: "pumpkin_stem", grows: true },
-    melon_stem:            { shape: "cross", stages: [0, 1, 2, 3, 4, 5, 6, 7], tex: "melon_stem", grows: true },
-    attached_pumpkin_stem: { shape: "cross", stages: [0], tex: "attached_pumpkin_stem" },
-    attached_melon_stem:   { shape: "cross", stages: [0], tex: "attached_melon_stem" },
+    // Gourd stems use one grayscale texture with model bounds and a tint that
+    // both change by age. Attached stems use their own texture/model path.
+    pumpkin_stem:          { shape: "cross", stages: [0, 1, 2, 3, 4, 5, 6, 7], tex: "pumpkin_stem", stem: true },
+    melon_stem:            { shape: "cross", stages: [0, 1, 2, 3, 4, 5, 6, 7], tex: "melon_stem", stem: true },
   };
 
   // Ageless vanilla blocks whose model is the crossed-diagonal-planes X shape
   // (rendered flat in-game, never as a cube): saplings, flowers, grasses,
   // bushes, corals, mushrooms, roots... Matched by suffix or exact name.
   const CROSS_SUFFIXES = [
-    "_sapling", "_fungus", "_roots", "_coral", "_coral_fan", "_coral_wall_fan",
+    "_sapling", "_fungus", "_roots", "_coral",
     "_tulip", "_vines", "_propagule", "_bush", "_flower",
   ];
   const CROSS_BLOCKS = new Set([
-    "short_grass", "tall_grass", "grass", "fern", "large_fern", "bush",
+    "short_grass", "grass", "fern", "bush",
     "short_dry_grass", "tall_dry_grass", "dandelion", "poppy", "allium",
     "azure_bluet", "oxeye_daisy", "cornflower", "lily_of_the_valley",
     "wither_rose", "torchflower", "open_eyeblossom", "closed_eyeblossom",
     "red_mushroom", "brown_mushroom", "sugar_cane", "kelp", "kelp_plant",
-    "nether_sprouts", "cobweb", "sunflower", "lilac", "rose_bush", "peony",
+    "nether_sprouts", "cobweb",
   ]);
   // Ageless blocks whose model is the four-plane # instead: the seagrasses
   // use block/template_seagrass (planes at x/z = 4 and 12), not block/cross.
   const HASH_BLOCKS = new Set(["seagrass", "tall_seagrass"]);
   // blocks a CROSS_SUFFIXES match would misclassify (they have real models)
-  const NOT_CROSS = new Set(["chorus_flower", "spore_blossom"]);
+  const NOT_CROSS = new Set([
+    "chorus_flower", "spore_blossom",
+    "mangrove_roots", "muddy_mangrove_roots", "mangrove_propagule",
+    "tall_grass", "large_fern", "sunflower", "lilac", "rose_bush", "peony",
+  ]);
   /** "cross" | "hash" for ageless flat-plane blocks, else null. */
   function plantShape(n) {
+    if (n.startsWith("potted_") || /_coral_(?:wall_)?fan$/.test(n)) return null;
     if (HASH_BLOCKS.has(n)) return "hash";
     if (NOT_CROSS.has(n)) return null;
     if (CROSS_BLOCKS.has(n) || CROSS_SUFFIXES.some(s => n.endsWith(s))) return "cross";
@@ -121,8 +150,8 @@ const MCAssets = (() => {
 
   /**
    * Parses a block string that may carry state properties, e.g. "WHEAT[age=7]".
-   * Returns { shape, tex, block, age, h } for plant/cross blocks, else null
-   * (h = plane height fraction; below 1 only for growing stems).
+   * Returns render metadata for plant/cross blocks, else null. Growing stems
+   * carry their exact model bounds, UV height, plane radius, and age tint.
    * Age defaults to 0, matching the plugin (createBlockData's default state).
    */
   function cropState(name) {
@@ -135,7 +164,13 @@ const MCAssets = (() => {
       const shape = plantShape(base);
       if (!shape) return null;
       // wall fans share the regular fan's texture
-      return { shape, tex: base.replace(/_wall_fan$/, "_fan"), block: base, age: 0, h: 1 };
+      return {
+        shape, tex: base, block: base, age: 0,
+        bottom: 0, top: 1,
+        textureHeight: 1,
+        planeRadius: shape === "cross" ? SIMPLE_PLANT_RENDER.crossRadius : null,
+        tint: null,
+      };
     }
     const props = {};
     if (m[2]) {
@@ -147,19 +182,87 @@ const MCAssets = (() => {
     let age = parseInt(props.age, 10);
     if (isNaN(age)) age = 0;
     age = Math.max(0, Math.min(age, def.stages.length - 1));
+    const stem = def.stem === true;
+    const crop = def.shape === "hash";
     return {
       shape: def.shape,
       tex: def.tex || `${base}_stage${def.stages[age]}`,
       block: base, age,
-      h: def.grows ? (age + 1) / def.stages.length : 1,
+      bottom: stem ? STEM_RENDER.bottom
+        : crop ? SIMPLE_PLANT_RENDER.cropBottom : 0,
+      top: stem ? STEM_RENDER.tops[age] / 16
+        : crop ? SIMPLE_PLANT_RENDER.cropTop : 1,
+      textureHeight: stem ? STEM_RENDER.textureRows[age] / 16 : 1,
+      planeRadius: stem ? STEM_RENDER.planeRadius
+        : def.shape === "cross" ? SIMPLE_PLANT_RENDER.crossRadius : null,
+      tint: stem ? STEM_RENDER.colors[age] : null,
     };
+  }
+
+  /** Full texture for a plant state, including any state-specific tint. */
+  function plantTexture(name) {
+    const cs = cropState(name);
+    if (!cs) return null;
+    const tintKey = cs.tint || "default";
+    return loadFirst(`plant:${cs.tex}:${tintKey}`,
+      [`block/${cs.tex}.png`, `block/${cs.tex}_top.png`], cs.tex, cs.tint);
+  }
+
+  const stemSpriteCache = new Map();
+
+  /** Representative texture for complex plant models used by picker chips.
+   *  Their 3D preview still comes from blockModel(); this keeps the compact
+   *  16px list readable while respecting state-selected texture families. */
+  function complexPlantSprite(name) {
+    const parsed = parseState(name);
+    if (!parsed) return null;
+    const { block, props } = parsed;
+    let tex = null, candidates = null;
+    if (/_coral_(?:wall_)?fan$/.test(block)) {
+      tex = block.replace(/_wall_fan$/, "_fan");
+    } else if (block === "attached_melon_stem" || block === "attached_pumpkin_stem") {
+      tex = block;
+    } else if (DOUBLE_PLANTS.has(block)) {
+      tex = `${block}_${props.half === "upper" ? "top" : "bottom"}`;
+    } else if (block === "mangrove_propagule" || block.startsWith("potted_")) {
+      tex = block.replace(/^potted_/, "");
+    } else if (block === "torchflower_crop") {
+      tex = `torchflower_crop_stage${boundedInt(props.age, 0, 0, 1)}`;
+    } else if (block === "pitcher_crop") {
+      const age = boundedInt(props.age, 0, 0, 4);
+      tex = `pitcher_crop_${props.half === "upper" ? "top" : "bottom"}_stage_${age}`;
+      candidates = [`block/${tex}.png`, "block/pitcher_crop_top.png", "block/pitcher_crop_side.png"];
+    } else if (LAYERED_GROUND_COVER.has(block)) {
+      tex = block;
+    }
+    if (!tex) return null;
+    return loadFirst(`complex-plant:${block}:${tex}`,
+      candidates || [`block/${tex}.png`, `block/${tex}_top.png`], tex);
   }
 
   /** Representative sprite for any block string, including plant states.
    *  The _top fallback covers two-tall plants (tall_grass, lilac, ...). */
   function blockSprite(name) {
     const cs = cropState(name);
-    if (cs) return loadFirst(`plant:${cs.tex}`, [`block/${cs.tex}.png`, `block/${cs.tex}_top.png`], cs.tex);
+    if (cs) {
+      const texture = plantTexture(name);
+      if (!texture || cs.planeRadius == null) return texture;
+      const key = `${cs.tex}:${cs.age}`;
+      if (stemSpriteCache.has(key)) return stemSpriteCache.get(key);
+      const out = document.createElement("canvas");
+      out.width = 16; out.height = 16;
+      const c = out.getContext("2d");
+      c.imageSmoothingEnabled = false;
+      const top = STEM_RENDER.tops[cs.age];
+      const rows = STEM_RENDER.textureRows[cs.age];
+      // Vanilla's face runs from Y -1 to its age-specific top. Drawing the
+      // whole slice one pixel below the canvas clips the underground row.
+      c.drawImage(texture, 0, 0, 16, rows, 0, 16 - top, 16, rows);
+      stemSpriteCache.set(key, out);
+      return out;
+    }
+    const complex = complexPlantSprite(name);
+    if (complex) return complex;
     return block(name, "side");
   }
 
@@ -184,18 +287,20 @@ const MCAssets = (() => {
 
   /**
    * The six 8x8 face canvases of a head skin (with the hat overlay baked in),
-   * or null while loading / unresolvable. Skins load WITHOUT crossOrigin -
-   * skin hosts rarely send CORS headers; the canvas becomes write-only,
-   * which is fine since the preview only draws and never reads pixels back.
+   * or null while loading / unresolvable. Request CORS permission so the
+   * cropped canvases remain origin-clean and can become WebGL textures.
+   * Mojang supports anonymous CORS; other hosts may fail to a plain cube.
    */
   function headCube(texture) {
-    const url = skinUrlFrom(texture);
+    const url = skinUrlFrom(texture)?.replace(/^http:\/\/textures\.minecraft\.net\//i,
+      "https://textures.minecraft.net/");
     if (!url) return null;
     const cached = headCache.get(url);
     if (cached && cached !== "pending" && cached !== "failed") return cached;
     if (cached) return null;
     headCache.set(url, "pending");
     const img = new Image();
+    img.crossOrigin = "anonymous";
     img.onload = () => {
       const scale = img.width / 64;
       const cut = (x, y) => {
@@ -344,7 +449,7 @@ const MCAssets = (() => {
     return out;
   }
 
-  function loadFirst(key, candidates, tintName) {
+  function loadFirst(key, candidates, tintName, tintColor, versions = VERSIONS) {
     const cached = cache.get(key);
     if (cached === "pending") return null;
     if (cached === "failed") return null;
@@ -355,7 +460,7 @@ const MCAssets = (() => {
     // it. First successful load wins; if a texture doesn't exist for the
     // current game version, we fall back to the older versions automatically.
     const urls = [];
-    for (const version of VERSIONS) {
+    for (const version of versions) {
       for (const base of BASES) {
         for (const path of candidates) urls.push(`${base(version)}/${path}`);
       }
@@ -369,7 +474,7 @@ const MCAssets = (() => {
       img.crossOrigin = "anonymous";
       img.onload = () => {
         try {
-          cache.set(key, sprite(img, TINTS[clean(tintName)] || null, url));
+          cache.set(key, sprite(img, tintColor || TINTS[clean(tintName)] || null, url));
         } catch (e) {
           cache.set(key, "failed");
         }
@@ -384,23 +489,23 @@ const MCAssets = (() => {
 
   // ── vanilla block models (non-cube shapes) ─────────────────────────────────
 
-  const MODEL_BASES = [
-    (v) => `https://assets.mcasset.cloud/${v}/assets/minecraft/models`,
-    (v) => `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/${v}/assets/minecraft/models`,
+  const ASSET_BASES = [
+    (v) => `https://assets.mcasset.cloud/${v}/assets/minecraft`,
+    (v) => `https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/${v}/assets/minecraft`,
   ];
 
-  const jsonCache = new Map();  // model path -> Promise<json|null>
+  const jsonCache = new Map();  // asset path -> Promise<{json, version}|null>
   const modelCache = new Map(); // block name -> {elements,textures} | "pending" | "failed"
 
-  /** Fetches a model JSON (e.g. "block/cactus.json") through the version cascade. */
-  function fetchModelJson(rel) {
+  /** Fetches an asset JSON through the version cascade, with the version that served it. */
+  function fetchAssetEntry(rel) {
     if (!jsonCache.has(rel)) {
       jsonCache.set(rel, (async () => {
         for (const version of VERSIONS) {
-          for (const base of MODEL_BASES) {
+          for (const base of ASSET_BASES) {
             try {
               const res = await fetch(`${base(version)}/${rel}`);
-              if (res.ok) return await res.json();
+              if (res.ok) return { json: await res.json(), version };
             } catch (e) { /* next mirror */ }
           }
         }
@@ -408,6 +513,16 @@ const MCAssets = (() => {
       })());
     }
     return jsonCache.get(rel);
+  }
+
+  /** Fetches an asset JSON (e.g. "blockstates/stone.json") through the version cascade. */
+  async function fetchAssetJson(rel) {
+    return (await fetchAssetEntry(rel))?.json ?? null;
+  }
+
+  /** Fetches a model JSON (e.g. "block/cactus.json") through the version cascade. */
+  function fetchModelJson(rel) {
+    return fetchAssetJson(`models/${rel}`);
   }
 
   /**
@@ -465,14 +580,16 @@ const MCAssets = (() => {
    * different models don't collide. Inputs are never mutated (their
    * elements/textures stay cached as-is for reuse standalone).
    */
-  function mergeModels(models) {
+  function mergeModels(models, rotationY = 0) {
     const elements = [], textures = {};
     models.forEach((m, i) => {
       const remap = {};
       for (const [k, v] of Object.entries(m.textures)) {
         const nk = `m${i}_${k}`;
         remap[k] = nk;
-        textures[nk] = v;
+        // "#all"-style values point at this model's own variables; rename them too.
+        textures[nk] = typeof v === "string" && v[0] === "#" && v.slice(1) in m.textures
+          ? `#m${i}_${v.slice(1)}` : v;
       }
       for (const el of m.elements) {
         const el2 = JSON.parse(JSON.stringify(el));
@@ -485,7 +602,7 @@ const MCAssets = (() => {
         elements.push(el2);
       }
     });
-    return { elements, textures };
+    return { elements, textures, rotationY };
   }
 
   // Bamboo's blockstate is multipart with no plain "block/bamboo.json" file:
@@ -526,13 +643,61 @@ const MCAssets = (() => {
     return [`${prefix}candle_${CANDLE_COUNT_WORDS[count]}_candle${count > 1 ? "s" : ""}${lit ? "_lit" : ""}`];
   }
 
-  /** Maps (block, parsed props) to the real vanilla model file name(s) to
-   *  fetch+merge, for blocks whose blockstate has no plain
-   *  "block/<name>.json" file. Returns null for anything else, so the
-   *  caller falls back to fetching "block/<name>.json" as-is. */
-  function statefulModelFiles(block, props) {
-    if (block === "bamboo") return bambooModelFiles(props);
-    if (isCandleBlock(block)) return candleModelFiles(block, props);
+  const DOUBLE_PLANTS = new Set([
+    "tall_grass", "large_fern", "sunflower", "lilac", "rose_bush", "peony",
+  ]);
+  const LAYERED_GROUND_COVER = new Set(["pink_petals", "wildflowers", "leaf_litter"]);
+  const ATTACHED_STEM_ROTATIONS = { west: 0, north: 90, east: 180, south: 270 };
+
+  function boundedInt(value, fallback, min, max) {
+    const parsed = parseInt(value, 10);
+    return Math.max(min, Math.min(Number.isNaN(parsed) ? fallback : parsed, max));
+  }
+
+  function horizontalRotation(facing) {
+    return { north: 0, east: 90, south: 180, west: 270 }[facing] || 0;
+  }
+
+  function layeredGroundCoverFiles(block, amount) {
+    return Array.from({ length: amount }, (_, index) => `${block}_${index + 1}`);
+  }
+
+  /** Maps a parsed block state to its vanilla model file(s) and optional
+   *  whole-model rotation. Returns null when block/<name>.json is sufficient. */
+  function statefulModelSpec(block, props) {
+    if (block === "bamboo") return { files: bambooModelFiles(props), rotationY: 0 };
+    if (isCandleBlock(block)) return { files: candleModelFiles(block, props), rotationY: 0 };
+    if (block.endsWith("_coral_wall_fan")) {
+      return { files: [block], rotationY: horizontalRotation(props.facing) };
+    }
+    if (block === "attached_melon_stem" || block === "attached_pumpkin_stem") {
+      return { files: [block], rotationY: ATTACHED_STEM_ROTATIONS[props.facing || "north"] };
+    }
+    if (DOUBLE_PLANTS.has(block)) {
+      const half = props.half === "upper" ? "top" : "bottom";
+      return { files: [`${block}_${half}`], rotationY: 0 };
+    }
+    if (block === "mangrove_propagule" && props.hanging === "true") {
+      const age = boundedInt(props.age, 0, 0, 4);
+      return { files: [`mangrove_propagule_hanging_${age}`], rotationY: 0 };
+    }
+    if (block === "torchflower_crop") {
+      const age = boundedInt(props.age, 0, 0, 1);
+      return { files: [`torchflower_crop_stage${age}`], rotationY: 0 };
+    }
+    if (block === "pitcher_crop") {
+      const age = boundedInt(props.age, 0, 0, 4);
+      const half = props.half === "upper" ? "top" : "bottom";
+      return { files: [`pitcher_crop_${half}_stage_${age}`], rotationY: 0 };
+    }
+    if (LAYERED_GROUND_COVER.has(block)) {
+      const property = block === "leaf_litter" ? "segment_amount" : "flower_amount";
+      const amount = boundedInt(props[property], 1, 1, 4);
+      return {
+        files: layeredGroundCoverFiles(block, amount),
+        rotationY: horizontalRotation(props.facing),
+      };
+    }
     return null;
   }
 
@@ -557,6 +722,37 @@ const MCAssets = (() => {
         out.push(`${name}[candles=${count},lit=true]`);
       }
     }
+    for (const block of DOUBLE_PLANTS) {
+      out.push(`${block}[half=lower]`, `${block}[half=upper]`);
+    }
+    const facings = ["north", "east", "south", "west"];
+    const coralKinds = ["tube", "brain", "bubble", "fire", "horn"];
+    for (const dead of ["", "dead_"]) {
+      for (const kind of coralKinds) {
+        for (const facing of facings) {
+          out.push(`${dead}${kind}_coral_wall_fan[facing=${facing}]`);
+        }
+      }
+    }
+    for (const block of ["attached_melon_stem", "attached_pumpkin_stem"]) {
+      for (const facing of facings) out.push(`${block}[facing=${facing}]`);
+    }
+    for (let age = 0; age <= 4; age++) {
+      out.push(`mangrove_propagule[age=${age},hanging=true]`);
+    }
+    for (let age = 0; age <= 1; age++) out.push(`torchflower_crop[age=${age}]`);
+    for (let age = 0; age <= 4; age++) {
+      out.push(`pitcher_crop[age=${age},half=lower]`);
+      out.push(`pitcher_crop[age=${age},half=upper]`);
+    }
+    for (const block of LAYERED_GROUND_COVER) {
+      const property = block === "leaf_litter" ? "segment_amount" : "flower_amount";
+      for (let amount = 1; amount <= 4; amount++) {
+        for (const facing of facings) {
+          out.push(`${block}[${property}=${amount},facing=${facing}]`);
+        }
+      }
+    }
     return out;
   }
 
@@ -575,6 +771,27 @@ const MCAssets = (() => {
     return { block: m[1], props };
   }
 
+  // Huge mushrooms are six independently textured multipart faces, not the
+  // single north-facing plane in models/block/mushroom_stem.json. False state
+  // flags expose the interior texture; they do not remove that cube face.
+  const MUSHROOM_BLOCKS = new Set(["mushroom_stem", "brown_mushroom_block", "red_mushroom_block"]);
+  const mushroomModels = new Map();
+  function mushroomModel(block, props) {
+    const directions = ["north", "east", "south", "west", "up", "down"];
+    const key = block + directions.map(dir => props[dir] === "false" ? "0" : "1").join("");
+    if (!mushroomModels.has(key)) {
+      const faces = {};
+      for (const dir of directions) {
+        faces[dir] = { texture: props[dir] === "false" ? "#inside" : "#outside", uv: [0, 0, 16, 16] };
+      }
+      mushroomModels.set(key, {
+        elements: [{ from: [0, 0, 0], to: [16, 16, 16], faces }],
+        textures: { outside: `block/${block}`, inside: "block/mushroom_block_inside" },
+      });
+    }
+    return mushroomModels.get(key);
+  }
+
   /**
    * Resolved vanilla model geometry for a block, or null while loading /
    * for blocks that stay a plain cube (no model, builtin geometry).
@@ -584,25 +801,27 @@ const MCAssets = (() => {
     const parsed = parseState(name);
     if (!parsed || !parsed.block) return null;
     const { block, props } = parsed;
+    if (MUSHROOM_BLOCKS.has(block)) return mushroomModel(block, props);
     if (ENTITY_MODELS[block]) return ENTITY_MODELS[block];
-    const statefulFiles = statefulModelFiles(block, props);
+    const statefulSpec = statefulModelSpec(block, props);
     // States change these blocks' geometry, so they cache per exact prop set
     // (order-independent); other blocks ignore state today and cache per
     // bare name. clean(name) would strip the "[...]" back off, colliding
     // every variant onto one cache entry - build the key from the parsed
     // props instead.
-    const cacheKey = statefulFiles
+    const cacheKey = statefulSpec
       ? `${block}[${Object.keys(props).sort().map(k => `${k}=${props[k]}`).join(",")}]`
       : block;
     const cached = modelCache.get(cacheKey);
     if (cached && cached !== "pending" && cached !== "failed") return cached;
     if (cached) return null;
     modelCache.set(cacheKey, "pending");
-    const files = statefulFiles || [block];
+    const files = statefulSpec ? statefulSpec.files : [block];
     Promise.all(files.map(resolveModel))
       .then(models => {
         const resolved = models.filter(Boolean);
-        const merged = resolved.length ? mergeModels(resolved) : null;
+        const merged = resolved.length
+          ? mergeModels(resolved, statefulSpec ? statefulSpec.rotationY : 0) : null;
         modelCache.set(cacheKey, merged || "failed");
         if (merged) notify();
       })
@@ -649,13 +868,19 @@ const MCAssets = (() => {
     return null;
   }
 
+  /** A model texture value as a plain ref: 26.x may bind an object such as
+   *  {"sprite": "minecraft:block/glass", "force_translucent": true}. */
+  function texRef(v) {
+    return v && typeof v === "object" ? v.sprite : v;
+  }
+
   /** Texture canvas for a model face ref ("#side", "side", or a direct path),
    *  or null. Some vanilla files omit the "#", so any ref naming a texture
    *  key resolves as a variable. */
   function modelTexture(model, ref) {
-    let r = ref, guard = 0;
+    let r = texRef(ref), guard = 0;
     while (r && guard++ < 8) {
-      const next = model.textures[r[0] === "#" ? r.slice(1) : r];
+      const next = texRef(model.textures[r[0] === "#" ? r.slice(1) : r]);
       if (next === undefined || next === r) break;
       r = next;
     }
@@ -718,29 +943,118 @@ const MCAssets = (() => {
     return runs;
   }
 
-  /** Item model texture: tries item/, then block/ (many "items" are block sprites). */
+  // Model texture variables to read for each face, best first. Slabs, stairs,
+  // walls, buttons... have no texture named after the block, so the model's
+  // own bindings are the only reliable source.
+  const FACE_KEYS = {
+    top: ["top", "end", "up", "all", "texture", "side", "wall", "particle"],
+    bottom: ["bottom", "end", "down", "all", "texture", "side", "wall", "particle"],
+    side: ["side", "all", "texture", "wall", "front", "north", "top", "particle"],
+    item: ["layer0", "side", "all", "texture", "wall", "top", "particle"],
+  };
+
+  /** Texture variables of a model ("block/stone_slab") merged down its parent chain, or null. */
+  async function modelTextureMap(path) {
+    const chain = [];
+    let m = await fetchModelJson(`${path}.json`);
+    for (let hops = 0; m && hops < 8; hops++) {
+      chain.push(m);
+      const parent = m.parent && clean(m.parent);
+      if (!parent || parent.startsWith("builtin")) break;
+      m = await fetchModelJson(`${parent}.json`);
+    }
+    if (!chain.length) return null;
+    const textures = {};
+    for (let i = chain.length - 1; i >= 0; i--) Object.assign(textures, chain[i].textures || {});
+    return textures;
+  }
+
+  /** Texture path ("block/cinnabar") a model binds for the first matching key, or null. */
+  async function modelFaceTexture(path, keys) {
+    const textures = path && await modelTextureMap(path);
+    if (!textures) return null;
+    for (const key of keys) {
+      let r = texRef(textures[key]);
+      for (let guard = 0; r && r[0] === "#" && guard < 8; guard++) r = texRef(textures[r.slice(1)]);
+      // "missingno" (air, technical blocks) is the game's no-texture placeholder.
+      if (r && r[0] !== "#" && clean(r) !== "missingno") return clean(r);
+    }
+    return null;
+  }
+
+  /** First model a block's blockstate file renders (variant or multipart), or null. */
+  function blockStateModel(bs) {
+    let first = bs && (bs.variants ? Object.values(bs.variants)[0] : bs.multipart?.[0]?.apply);
+    if (Array.isArray(first)) first = first[0];
+    return first?.model ? clean(first.model) : null;
+  }
+
+  /** First plain model an item definition (items/<n>.json) can select, or null. */
+  function itemDefinitionModel(def) {
+    const find = (node, depth) => {
+      if (!node || typeof node !== "object" || depth > 6) return null;
+      if (typeof node.model === "string" && /model$/.test(node.type || "")) return node.model;
+      for (const v of Array.isArray(node) ? node : Object.values(node)) {
+        const hit = find(v, depth + 1);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    const model = find(def?.model, 0);
+    return model ? clean(model) : null;
+  }
+
+  /**
+   * Loads a texture found through the game's own definition file (a
+   * blockstate or item definition) and the model it names, falling back to
+   * name-based guesses when no model binds one. Those guesses only try the
+   * version that served the definition: the game defines the key there, so an
+   * older version has nothing better. Returns the cached canvas, or null while
+   * it resolves (onReady fires when it lands).
+   */
+  function loadResolved(key, defPath, modelOf, keys, guesses, guessTint) {
+    const cached = cache.get(key);
+    if (cached) return cached === "pending" || cached === "failed" ? null : cached;
+    cache.set(key, "pending");
+    (async () => {
+      const def = await fetchAssetEntry(defPath);
+      const path = def && await modelFaceTexture(modelOf(def.json), keys);
+      return { path, version: def?.version };
+    })().catch(() => ({})).then(({ path, version }) => {
+      cache.delete(key);
+      if (path) loadFirst(key, [`${path}.png`], path.split("/").pop());
+      else loadFirst(key, guesses, guessTint, undefined, version ? [version] : VERSIONS);
+    });
+    return null;
+  }
+
+  /** Item icon texture from the item's definition and model; item/ then block/ by name otherwise. */
   function item(name) {
     const n = clean(name);
     if (!n) return null;
-    return loadFirst(`item:${n}`, [`item/${n}.png`, `block/${n}.png`], n);
+    return loadResolved(`item:${n}`, `items/${n}.json`, itemDefinitionModel, FACE_KEYS.item,
+      [`item/${n}.png`, `block/${n}.png`], n);
   }
 
-  /** Block face texture with the usual _top/_side/_bottom fallbacks. */
+  /** Block face texture from the block's model; the usual _top/_side/_bottom guesses otherwise. */
   function block(name, face) {
     const n = clean(name);
     if (!n) return null;
-    const candidates = face === "top"
-      ? [`block/${n}_top.png`, `block/${n}.png`, `block/${n}_side.png`]
-      : face === "bottom"
-        ? [`block/${n}_bottom.png`, `block/${n}_top.png`, `block/${n}.png`]
-        : [`block/${n}_side.png`, `block/${n}.png`, `block/${n}_top.png`];
     // Vanilla's grass top is grayscale and receives a biome tint in-game.
     // Side/bottom faces do not share that tint, so choose it per face rather
     // than tinting the entire grass block (which produced the gray preview
     // surface visible in the seed playback).
     const tintName = face === "top" && TINTS[`${n}_top`] ? `${n}_top` : n;
-    return loadFirst(`block:${n}:${face}`, candidates, tintName);
+    const mappedFace = BLOCK_FACE_TEXTURES[n]?.[face];
+    if (mappedFace) return loadFirst(`block:${n}:${face}`, [`block/${mappedFace}.png`], tintName);
+    const guesses = face === "top"
+      ? [`block/${n}_top.png`, `block/${n}.png`, `block/${n}_side.png`]
+      : face === "bottom"
+        ? [`block/${n}_bottom.png`, `block/${n}_top.png`, `block/${n}.png`]
+        : [`block/${n}_side.png`, `block/${n}.png`, `block/${n}_top.png`];
+    return loadResolved(`block:${n}:${face}`, `blockstates/${n}.json`, blockStateModel,
+      FACE_KEYS[face] || FACE_KEYS.side, guesses, tintName);
   }
 
-  return { item, itemShape, block, blockSprite, blockModel, modelTexture, cropState, stateVariants, headCube, headFace, edgeRuns, onReady, colorFor, clean };
+  return { item, itemShape, block, blockSprite, plantTexture, blockModel, modelTexture, cropState, stateVariants, headCube, headFace, edgeRuns, onReady, colorFor, clean };
 })();

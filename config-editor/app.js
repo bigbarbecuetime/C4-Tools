@@ -252,24 +252,14 @@ function buildQualityEditor(thresholds, multipliers) {
   refreshQualityMap(thresholds, multipliers);
 }
 
+/**
+ * A lifetime in words, sentence-cased for the readouts beside each field.
+ * The unit table itself lives in shared/lifetimes.js so the designer and this
+ * editor cannot drift apart on what "1 week" means.
+ */
 function readableDuration(value) {
-  let remaining = Math.max(0, Math.round(num(value, 0)));
-  if (remaining === 0) return "Never spoils";
-  const units = [
-    [43200, "month"],
-    [10080, "week"],
-    [1440, "day"],
-    [60, "hour"],
-    [1, "minute"],
-  ];
-  const parts = [];
-  for (const [size, label] of units) {
-    const count = Math.floor(remaining / size);
-    if (!count) continue;
-    parts.push(`${count} ${label}${count === 1 ? "" : "s"}`);
-    remaining %= size;
-  }
-  return parts.join(" ");
+  const words = Lifetimes.format(num(value, 0));
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 function updateDefaultFoodDuration() {
@@ -281,15 +271,17 @@ function vanillaFoodRow(items, key) {
   let currentKey = key;
   const row = document.createElement("div");
   row.className = "row config-duration-row";
+  // Flat children, placed explicitly by the .config-duration-row grid: the
+  // caption and readout own their own grid rows, so the material field, the
+  // minutes field and the delete button all sit centred on the middle row.
   row.innerHTML = `
+    <span class="duration-caption">Lifetime</span>
     <input class="flex-input" type="text" data-k data-keys="items" value="${esc(key)}"
       placeholder="MATERIAL" spellcheck="false" aria-label="Food material">
-    <label class="duration-cell">Lifetime
-      <span class="input-with-unit"><input type="number" data-v min="0" step="1"
-        value="${esc(items[key])}" aria-label="Lifetime in minutes"><span class="input-unit">min</span></span>
-      <output class="duration-readout">${readableDuration(items[key])}</output>
-    </label>
-    <button class="danger row-delete" data-del aria-label="Delete ${esc(key)} override">&times;</button>`;
+    <span class="input-with-unit"><input type="number" data-v min="0" step="1"
+      value="${esc(items[key])}" aria-label="Lifetime in minutes"><span class="input-unit">min</span></span>
+    <button class="danger row-delete" data-del aria-label="Delete ${esc(key)} override">✕</button>
+    <output class="duration-readout">${readableDuration(items[key])}</output>`;
   const keyInput = row.querySelector("[data-k]");
   const valueInput = row.querySelector("[data-v]");
   const output = row.querySelector(".duration-readout");
@@ -650,11 +642,15 @@ function highlightFallback(material) {
   return MCAssets.colorFor(material);
 }
 
+
+/** Outline width range the designer offers, in blocks. Mirrors CropHighlighter. */
+const MIN_THICKNESS = 0.0001;
+const MAX_THICKNESS = 0.1;
+
 function highlightBars(canvas, thickness, material) {
-  // The isometric canvas exaggerates narrow cuboids at this scale. Applying
-  // the empirically matched factor keeps 0.04 blocks as thin here as it is in
-  // game without changing the value written to config.yml.
-  const t = clamp(thickness, 0.005, 0.5) * 0.375;
+  // Drawn at its true width: the block below is one unit, so 0.1 is a tenth
+  // of it. No fudge factor, or the preview cannot be measured against a block.
+  const t = clamp(thickness, MIN_THICKNESS, MAX_THICKNESS);
   const half = 0.5, ht = t / 2;
   const boxes = [];
   for (const x of [-half, half]) {
@@ -745,7 +741,7 @@ function drawHighlightPreview() {
 
   const ch = sect("crop_highlight");
   const material = String(ch.block || "BLACK_STAINED_GLASS").trim() || "BLACK_STAINED_GLASS";
-  const thickness = clamp(num(ch.thickness, 0.04), 0.005, 0.5);
+  const thickness = clamp(num(ch.thickness, 0.04), MIN_THICKNESS, MAX_THICKNESS);
   const glow = ch.glow === true;
   const glowColor = configuredGlowColor(ch.glow_color);
   drawHighlightGrid(canvas, ctx);
@@ -753,8 +749,6 @@ function drawHighlightPreview() {
   const faces = highlightBars(canvas, thickness, material).sort((a, b) => a.depth - b.depth);
   for (const face of faces) paintHighlightFace(ctx, face, glow, glowColor);
 
-  const detail = `${material} bars · ${thickness} blocks thick · glow ${glow ? "on" : "off"}`;
-  $("highlight-preview-detail").textContent = detail;
   canvas.setAttribute("aria-label", `Example one-block crop hitbox outlined with ${material} bars ${thickness} blocks thick. Glow ${glow ? "on" : "off"}.`);
 }
 
@@ -792,7 +786,7 @@ function bindStatic() {
   bindNum("mc-chance", v => sect("mcmmo").herbalism_double_drop_chance = clamp(v, 0, 1));
 
   bindTxt("ch-block", v => { sect("crop_highlight").block = v.trim(); paintChips(); drawHighlightPreview(); });
-  bindNum("ch-thickness", v => { sect("crop_highlight").thickness = clamp(v, 0.005, 0.5); drawHighlightPreview(); });
+  bindNum("ch-thickness", v => { sect("crop_highlight").thickness = clamp(v, MIN_THICKNESS, MAX_THICKNESS); drawHighlightPreview(); });
   bindChk("ch-glow", v => { sect("crop_highlight").glow = v; $("ch-glow-options").hidden = !v; drawHighlightPreview(); });
   bindTxt("ch-color", v => { sect("crop_highlight").glow_color = v.trim(); drawHighlightPreview(); });
 

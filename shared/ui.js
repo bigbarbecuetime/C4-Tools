@@ -66,11 +66,9 @@ const UI = (() => {
     });
     document.dispatchEvent(new CustomEvent("ui:theme", { detail: { theme: t } }));
   }
+  /** theme-boot.js already resolved the theme in <head>; sync the toggle to it. */
   function initTheme() {
-    let t = null;
-    try { t = localStorage.getItem(THEME_KEY); } catch (e) { /* ignore */ }
-    if (!t) t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-    setTheme(t);
+    setTheme(currentTheme());
   }
 
   /* ── outline: one pane open at a time ─────────────────────────────── */
@@ -236,12 +234,27 @@ const UI = (() => {
           ? LegacyText.toHtml(input.value || "", escHtml)
           : escHtml(input.value || "");
       };
+      // data-fmt may carry the codes this field's text implicitly has in game
+      // (e.g. "&7&o" for a description, which the plugin renders gray italic).
+      // They are seeded on the first click so they are visible and editable,
+      // and dropped again on blur if nothing was typed after them, so merely
+      // opening a field never writes codes into the config.
+      const seed = input.getAttribute("data-fmt") || "";
+      const setValue = (v) => {
+        input.value = v;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      };
       const edit = () => {
         wrap.classList.add("editing");
+        if (seed && !input.value) setValue(seed);
         input.focus();
         input.setSelectionRange(input.value.length, input.value.length);
       };
-      const done = () => { wrap.classList.remove("editing"); render(); };
+      const done = () => {
+        wrap.classList.remove("editing");
+        if (seed && input.value === seed) setValue("");
+        render();
+      };
       view.addEventListener("click", edit);
       view.addEventListener("keydown", (e) => {
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); edit(); }

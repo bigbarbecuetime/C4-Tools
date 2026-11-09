@@ -94,6 +94,21 @@ function el(type, model, block, translation, rotation, scale, texture) {
            texture: texture || "", translation, rotation, scale };
 }
 
+function sameVector(actual, expected) {
+  return actual.length === expected.length && actual.every((value, index) => value === expected[index]);
+}
+
+/** A freshly-added element starts with the useful item-display pose. When the
+ * user immediately changes it to a block, replace only that untouched pose
+ * with block-display defaults; deliberate transforms survive later switches. */
+function applyTypeDefaults(element, previousType) {
+  if (previousType !== "item" || element.type !== "block") return;
+  if (!sameVector(element.translation, [0, 0.25, 0])
+      || !sameVector(element.rotation, [0, 45, 0])) return;
+  element.translation = [0, 0, 0];
+  element.rotation = [0, 0, 0];
+}
+
 let state = load();
 
 function load() {
@@ -245,6 +260,16 @@ function normalizeCrop(raw) {
 
 function cur() { return state.crop; }
 
+function knownFarmland(id) {
+  const key = String(id || "").trim();
+  return state.farmlandTypes[key] || DraftCatalog.farmland(key);
+}
+
+function knownConsumable(id) {
+  const key = String(id || "").trim();
+  return state.consumables[key] || DraftCatalog.consumable(key);
+}
+
 function consumableFromYaml(id, o) {
   o = o || {};
   const rawModel = o.output_item != null ? String(o.output_item)
@@ -303,17 +328,6 @@ function rememberFile(name, text) {
 const $ = (id) => document.getElementById(id);
 const colorFor = MCAssets.colorFor;
 
-globalThis.CropDesignerCatalog = {
-  farmlandKeys: () => ["minecraft", ...Object.keys(state.farmlandTypes)],
-  farmlandTexture: (id) => {
-    const type = state.farmlandTypes[id];
-    const block = type?.visual || (id === "minecraft" ? "farmland_moist" : id);
-    return MCAssets.blockSprite(block);
-  },
-  consumableKeys: () => Object.keys(state.consumables),
-  consumableTexture: (id) => MCAssets.item(state.consumables[id]?.model || ""),
-};
-
 function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
 function num(v, fallback) { const n = parseFloat(v); return isNaN(n) ? fallback : n; }
 
@@ -327,28 +341,6 @@ function changed(structural) {
 function prettify(id) {
   return id.split(/[_\-]/).filter(Boolean)
     .map(w => w[0].toUpperCase() + w.slice(1)).join(" ");
-}
-
-function shade(hex, factor) {
-  const c = parseColor(hex);
-  return `rgb(${Math.round(c[0] * factor)}, ${Math.round(c[1] * factor)}, ${Math.round(c[2] * factor)})`;
-}
-
-function parseColor(color) {
-  if (color.startsWith("#")) {
-    return [parseInt(color.slice(1, 3), 16), parseInt(color.slice(3, 5), 16), parseInt(color.slice(5, 7), 16)];
-  }
-  const m = color.match(/hsl\((\d+),\s*(\d+)%?,\s*(\d+)%?\)/);
-  if (m) return hslToRgb(+m[1] / 360, +m[2] / 100, +m[3] / 100);
-  return [160, 160, 160];
-}
-
-function hslToRgb(h, s, l) {
-  const f = (n) => {
-    const k = (n + h * 12) % 12;
-    return Math.round(255 * (l - s * Math.min(l, 1 - l) * Math.max(-1, Math.min(k - 3, 9 - k, 1))));
-  };
-  return [f(0), f(8), f(4)];
 }
 
 // ── 3D math (mirrors the plugin's transform semantics) ─────────────────────
@@ -379,7 +371,26 @@ function toView(p) {
 }
 
 const canvas = $("preview");
-const ctx = canvas.getContext("2d");
+const previewGL = CropPreviewGL;
+let scheduledDrawFrame = 0;
+window.addEventListener("crop-preview-webgl-restored", () => draw());
+
+/** Coalesce high-frequency camera input to the browser's presentation rate. */
+function scheduleDraw() {
+  if (scheduledDrawFrame) return;
+  scheduledDrawFrame = requestAnimationFrame(() => {
+    scheduledDrawFrame = 0;
+    draw();
+  });
+}
+
+/** Render the last input state before pointer-up persists the camera. */
+function flushScheduledDraw() {
+  if (!scheduledDrawFrame) return;
+  cancelAnimationFrame(scheduledDrawFrame);
+  scheduledDrawFrame = 0;
+  draw();
+}
 
 function project(p) {
   const v = toView(p);
@@ -427,8 +438,10 @@ function boxFaces(corners, blockName) {
     { idx: [0, 1, 5, 4], kind: "bottom" }, // -y
   ];
   const color = colorFor(blockName);
+  const farmlandSide = ["farmland", "farmland_moist"].includes(MCAssets.clean(blockName));
   return F.map(f => quadFace(f.idx.map(i => corners[i]), {
     color, cull: true, tex: MCAssets.block(blockName, f.kind),
+    texV: farmlandSide && f.kind === "side" ? [1 / 16, 1] : null,
   }));
 }
 
@@ -452,7 +465,7 @@ function blockCorners(scale, rotation, translation) {
 /** Item sprite quads - full scale (scale 1 ≈ 1 block), matching how the
  * game actually renders FIXED ItemDisplays of the models we use. If editor
  * and game ever drift apart, this is the single factor to calibrate. */
-function spriteQuads(element) {
+function spriteQuads(element, includeEdgeExtrusion = true) {
   const [sx, sy, sz] = element.scale;
   const r = element.rotation.map(deg);
   const t = element.translation;
@@ -474,6 +487,10 @@ function spriteQuads(element) {
     }
     quads.push(quadFace(pts, { color, flat: true, tex }));
   }
+  // At the 5x5 field zoom the 1/16-block edge extrusion is subpixel. Keeping
+  // its two textured planes preserves the item's visible shape while avoiding
+  // thousands of invisible silhouette-strip faces across 25 plots.
+  if (!includeEdgeExtrusion) return quads;
   // Extrusion side faces along the sprite's opaque-pixel silhouette, each
   // textured with its 1-px edge strip (shaded by normal, like in-game).
   const runs = tex && MCAssets.edgeRuns(tex);
@@ -503,23 +520,25 @@ function spriteQuads(element) {
 
 /** Vanilla plant-block quads (wheat, carrots, bushes, corals, ...): the #
  * pattern of the crop model, or two diagonal planes for cross models, with
- * the right stage texture for the element's [age=n]. Growing stems (cs.h < 1)
- * shorten the planes and sample only the bottom of the texture, like the
- * vanilla stem models. Transforms apply like blockCorners (bottom-center
- * pivot). */
+ * the right stage texture for the element's [age=n]. Growing stems carry the
+ * exact vanilla bounds, top-origin texture slice, diagonal width, and tint.
+ * Transforms apply like blockCorners (bottom-center pivot). */
 function plantQuads(element, cs) {
   const [sx, sy, sz] = element.scale;
   const r = element.rotation.map(deg);
   const t = element.translation;
-  const tex = MCAssets.blockSprite(element.block);
-  const color = colorFor(element.block);
-  const h = cs.h != null ? cs.h : 1;
+  const tex = MCAssets.plantTexture(element.block);
+  const color = cs.tint || colorFor(element.block);
+  const bottom = cs.bottom != null ? cs.bottom : 0;
+  const top = cs.top != null ? cs.top : 1;
+  const textureHeight = cs.textureHeight != null ? cs.textureHeight : 1;
+  const planeRadius = cs.planeRadius != null ? cs.planeRadius : 0.354;
   const quads = [];
   // plane endpoints in unit-block local space (x0,z0 -> x1,z1)
   const planes = cs.shape === "cross"
     ? [
-        [[-0.354, -0.354], [0.354, 0.354]],
-        [[-0.354, 0.354], [0.354, -0.354]],
+        [[-planeRadius, -planeRadius], [planeRadius, planeRadius]],
+        [[-planeRadius, planeRadius], [planeRadius, -planeRadius]],
       ]
     : [
         [[-0.25, -0.5], [-0.25, 0.5]],
@@ -530,14 +549,15 @@ function plantQuads(element, cs) {
   for (const [[x0, z0], [x1, z1]] of planes) {
     // texture-space order: TL, TR, BR, BL (world +y is up)
     const pts = [];
-    for (const [lx, lz, ly] of [[x0, z0, h], [x1, z1, h], [x1, z1, 0], [x0, z0, 0]]) {
+    for (const [lx, lz, ly] of [[x0, z0, top], [x1, z1, top],
+      [x1, z1, bottom], [x0, z0, bottom]]) {
       let p = [lx * sx, ly * sy, lz * sz];
       p = rotXYZ(p, r[0], r[1], r[2]);
       pts.push([p[0] + t[0], p[1] + t[1], p[2] + t[2]]);
     }
     quads.push(quadFace(pts, {
-      color, alpha: 0.95, flat: true, tex,
-      texV: h < 1 ? [1 - h, 1] : null,
+      color, flat: true, tex,
+      texV: textureHeight < 1 ? [0, textureHeight] : null,
     }));
   }
   return quads;
@@ -561,6 +581,7 @@ function modelQuads(element, model) {
     const L = (x, y, z) => {
       let p = [x / 16 - 0.5, y / 16, z / 16 - 0.5];
       if (el.rotation) p = elementRot(p, el.rotation);
+      if (model.rotationY) p = rotXYZ(p, 0, deg(model.rotationY), 0);
       p = rotXYZ([p[0] * sx, p[1] * sy, p[2] * sz], r[0], r[1], r[2]);
       return [p[0] + t[0], p[1] + t[1], p[2] + t[2]];
     };
@@ -640,92 +661,19 @@ function headQuads(element) {
   }));
 }
 
-// ── BSP hidden-surface ordering ────────────────────────────────────────────
-//
-// Painter's sort by average depth fails for interpenetrating quads (crops
-// clipping through the farmland box) and flips between near-equal depths
-// (sprite planes vs their edge faces). A BSP tree splits quads along each
-// other's planes so back-to-front traversal is exact from every angle.
-// Built once per draw (O(n²) plane tests on ~100s of quads - negligible).
-
-const BSP_EPS = 1e-4;
-
-/**
- * Splits a convex polygon (array of [x,y,z]) by plane n·p = d.
- * @returns {{front: Array|null, back: Array|null}} polygon pieces on each side
- */
-function splitPoly(poly, n, d) {
-  const front = [], back = [];
-  for (let i = 0; i < poly.length; i++) {
-    const a = poly[i], b = poly[(i + 1) % poly.length];
-    const da = dot(n, a) - d, db = dot(n, b) - d;
-    if (da >= -BSP_EPS) front.push(a);
-    if (da <= BSP_EPS) back.push(a);
-    if ((da > BSP_EPS && db < -BSP_EPS) || (da < -BSP_EPS && db > BSP_EPS)) {
-      const t = da / (da - db);
-      const m = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
-      front.push(m);
-      back.push(m);
-    }
-  }
-  return { front: front.length > 2 ? front : null, back: back.length > 2 ? back : null };
-}
-
-/** Inserts {face, poly} into the BSP tree rooted at node (mutates), splitting as needed. */
-function bspInsert(node, item) {
-  let minD = 0, maxD = 0;
-  for (const p of item.poly) {
-    const dd = dot(node.n, p) - node.d;
-    if (dd < minD) minD = dd;
-    if (dd > maxD) maxD = dd;
-  }
-  const send = (key, it) => {
-    if (node[key]) bspInsert(node[key], it);
-    else node[key] = { n: it.face.normal, d: dot(it.face.normal, it.poly[0]), items: [it], front: null, back: null };
-  };
-  if (minD >= -BSP_EPS && maxD <= BSP_EPS) node.items.push(item);
-  else if (minD >= -BSP_EPS) send("front", item);
-  else if (maxD <= BSP_EPS) send("back", item);
-  else {
-    const s = splitPoly(item.poly, node.n, node.d);
-    if (s.front) send("front", { face: item.face, poly: s.front });
-    if (s.back) send("back", { face: item.face, poly: s.back });
-  }
-}
-
-/** Builds a BSP tree over faces (zero-area faces are dropped - invisible). */
-function bspBuild(faces) {
-  let root = null;
-  for (const face of faces) {
-    const n = face.normal;
-    if (!n[0] && !n[1] && !n[2]) continue;
-    const item = { face, poly: face.pts };
-    if (root) bspInsert(root, item);
-    else root = { n, d: dot(n, face.pts[0]), items: [item], front: null, back: null };
-  }
-  return root;
-}
-
-/** Paints the tree back-to-front for the current view (culls per-face flags). */
-function bspPaint(node) {
-  if (!node) return;
-  const near = toView(node.n)[2] > 0 ? "front" : "back";
-  bspPaint(near === "front" ? node.back : node.front);
-  for (const it of node.items) {
-    if (it.face.cull && toView(it.face.normal)[2] < 0) continue;
-    paintFace(it.face, it.poly);
-  }
-  bspPaint(node[near]);
-}
+// Occlusion is resolved by preview-gl.js in the GPU depth buffer. Both the
+// single plot and 5×5 field submit the same quad representation.
 
 // ── render ─────────────────────────────────────────────────────────────────
 
 function draw() {
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (!state.crop) return;
+  if (!previewGL.begin()) return;
+  if (!state.crop) { previewGL.end(); return; }
 
+  // The grid enters the same WebGL pipeline first, so opaque scene geometry
+  // naturally covers it just as it would on the ground in game.
   drawGrid();
+  previewGL.flushOverlay();
 
   const faces = [];
 
@@ -742,26 +690,27 @@ function draw() {
   for (const [plotX, plotZ] of plots) {
     faces.push(...boxFaces(blockCorners(
       [1, 0.9375, 1], [0, 0, 0], [plotX, -0.9375, plotZ]), visual));
-    if (!stage) continue;
-    for (const source of stage.elements) {
-      const element = field ? fieldElement(source, plotX, plotZ) : source;
-      if (element.type === "block") {
-        const cs = MCAssets.cropState(element.block);
-        if (cs) {
-          faces.push(...plantQuads(element, cs));
-        } else {
-          const model = MCAssets.blockModel(element.block);
-          if (model) {
-            faces.push(...modelQuads(element, model));
-          } else { // plain cube while the model loads / for modelless blocks
-            faces.push(...boxFaces(
-              blockCorners(element.scale, element.rotation, element.translation), element.block));
+    if (stage) {
+      for (const source of stage.elements) {
+        const element = field ? fieldElement(source, plotX, plotZ) : source;
+        if (element.type === "block") {
+          const cs = MCAssets.cropState(element.block);
+          if (cs) {
+            faces.push(...plantQuads(element, cs));
+          } else {
+            const model = MCAssets.blockModel(element.block);
+            if (model) {
+              faces.push(...modelQuads(element, model));
+            } else { // plain cube while the model loads / for modelless blocks
+              faces.push(...boxFaces(
+                blockCorners(element.scale, element.rotation, element.translation), element.block));
+            }
           }
+        } else if (element.type === "head") {
+          faces.push(...headQuads(element));
+        } else {
+          faces.push(...spriteQuads(element, !field));
         }
-      } else if (element.type === "head") {
-        faces.push(...headQuads(element));
-      } else {
-        faces.push(...spriteQuads(element));
       }
     }
   }
@@ -774,18 +723,18 @@ function draw() {
   // item-display quads following a short Minecraft-like pop arc.
   faces.push(...previewActorQuads());
 
-  // exact back-to-front order via BSP (see bspBuild)
-  bspPaint(bspBuild(faces));
+  // Single plots and 5x5 fields share one renderer. WebGL resolves occlusion
+  // in the depth buffer and groups all opaque/cutout faces by texture.
+  previewGL.faces(faces, project, toView, LIGHT, dot);
   drawPreviewParticles();
 
   // anchor marker
   const o = project([0, 0, 0]);
-  ctx.fillStyle = "rgba(255,255,255,0.5)";
-  ctx.beginPath();
-  ctx.arc(o.x, o.y, 2.5, 0, Math.PI * 2);
-  ctx.fill();
+  previewGL.circle(o.x, o.y, 2.5, "rgba(255,255,255,0.5)");
+  globalThis.CropPreviewGizmo?.();
 
   drawHud(stage);
+  previewGL.end();
 }
 
 function previewDropModels() {
@@ -878,9 +827,9 @@ function drawBlockFragments(block, count, motion) {
     // Plant textures contain large transparent regions. Vanilla still emits a
     // readable block-fragment burst, so retain the sampled texture over an
     // opaque material-color chip instead of allowing particles to disappear.
-    ctx.fillStyle = fragmentColor;
-    ctx.fillRect(Math.round(x), Math.round(y), size, size);
-    ctx.drawImage(texture, sx, sy, sample, sample, Math.round(x), Math.round(y), size, size);
+    previewGL.rect(Math.round(x), Math.round(y), size, size, fragmentColor);
+    previewGL.image(texture, sx, sy, sample, sample,
+      Math.round(x), Math.round(y), size, size);
   }
 }
 
@@ -910,27 +859,25 @@ function drawConfiguredParticle(effect, motion) {
   const center = project([0, 0.72, 0]);
   const count = clamp(Math.round(effect.count || 1), 1, 36);
   const radiusScale = clamp(num(effect.spread, 0.3), 0, 2) * 72;
-  ctx.fillStyle = color;
-  ctx.strokeStyle = color;
-  ctx.font = "bold 11px sans-serif";
-  ctx.textAlign = "center";
   for (let i = 0; i < count; i++) {
     const angle = i * 2.399 + motion * 3;
     const radius = (0.25 + ((i * 37) % 100) / 100) * radiusScale;
     const x = center.x + Math.cos(angle) * radius;
     const y = center.y + Math.sin(angle) * radius - motion * (7 + i % 12);
-    if (shape === "heart") ctx.fillText("♥", x, y);
+    if (shape === "heart") previewGL.text("♥", x, y,
+      { font: "bold 11px sans-serif", fill: color });
     else if (shape === "plus" || shape === "spark") {
       const size = shape === "plus" ? 3 : 4;
-      ctx.fillRect(Math.round(x - size), Math.round(y - 1), size * 2 + 1, 2);
-      ctx.fillRect(Math.round(x - 1), Math.round(y - size), 2, size * 2 + 1);
+      previewGL.rect(Math.round(x - size), Math.round(y - 1), size * 2 + 1, 2, color);
+      previewGL.rect(Math.round(x - 1), Math.round(y - size), 2, size * 2 + 1, color);
     } else if (shape === "cloud") {
-      ctx.beginPath(); ctx.arc(x, y, 3 + i % 3, 0, Math.PI * 2); ctx.fill();
+      previewGL.circle(x, y, 3 + i % 3, color);
     } else if (shape === "leaf") {
-      ctx.save(); ctx.translate(x, y); ctx.rotate(angle); ctx.fillRect(-3, -1, 7, 3); ctx.restore();
+      previewGL.rect(x - 3, y - 1, 7, 3, color, angle);
     } else if (shape === "flame") {
-      ctx.beginPath(); ctx.moveTo(x, y - 5); ctx.lineTo(x + 3, y + 3); ctx.lineTo(x - 3, y + 3); ctx.closePath(); ctx.fill();
-    } else ctx.fillRect(Math.round(x), Math.round(y), shape === "crumb" ? 4 : 3, shape === "crumb" ? 3 : 3);
+      previewGL.polygon([[x, y - 5], [x + 3, y + 3], [x - 3, y + 3]], color);
+    } else previewGL.rect(Math.round(x), Math.round(y),
+      shape === "crumb" ? 4 : 3, shape === "crumb" ? 3 : 3, color);
   }
 }
 
@@ -942,7 +889,6 @@ function drawPreviewParticles() {
   const action = mode === "seed"
     ? seedBreakElapsed >= 250 && seedBreakElapsed < 1900
     : phase >= 0.28 && phase < 0.48;
-  ctx.save();
   if (mode === "effects") {
     const active = previewEffectState?.until > performance.now() ? previewEffectState : null;
     if (active) {
@@ -965,13 +911,14 @@ function drawPreviewParticles() {
     if (configured.length) configured.forEach(effect => drawConfiguredParticle(effect, motion));
     else drawBlockFragments(previewBreakBlock(stageIndex), 20, motion);
   }
-  ctx.restore();
 }
 
 /** The uploaded farmland's visual block, with the vanilla fallback. */
 function farmlandVisual() {
-  const flType = state.farmlandTypes[state.crop.farmland];
-  return flType && flType.visual ? flType.visual : "farmland_moist";
+  const flType = knownFarmland(state.crop.farmland);
+  const visual = flType?.visual;
+  return String(Array.isArray(visual) ? visual[0] || "" : visual || "")
+    .split(",")[0].trim() || "farmland_moist";
 }
 
 /** Stable pseudo-random field variation derived from plot coordinates. */
@@ -1003,62 +950,11 @@ function fieldElement(element, plotX, plotZ) {
   });
 }
 
-/** Paints face f clipped to poly (a piece of f from BSP splitting, or f.pts whole). */
-function paintFace(f, poly) {
-  const frag = (poly || f.pts).map(project);
-  const path = () => {
-    ctx.beginPath();
-    ctx.moveTo(frag[0].x, frag[0].y);
-    for (let i = 1; i < frag.length; i++) ctx.lineTo(frag[i].x, frag[i].y);
-    ctx.closePath();
-  };
-  const bright = f.flat ? 1 : 0.55 + 0.45 * Math.max(0, dot(f.normal, LIGHT));
-
-  if (f.tex) {
-    // Orthographic projection of a planar rectangle is a parallelogram, so a
-    // single affine transform maps the texture exactly onto the face; the
-    // fragment path clips it to this BSP piece.
-    // texU/texV limit sampling to a texture slice (growing stems, edge runs).
-    const [p0, p1, , p3] = f.pts.map(project);
-    const tw = f.tex.width, th = f.tex.height;
-    const sx = f.texU ? f.texU[0] * tw : 0;
-    const sw = f.texU ? (f.texU[1] - f.texU[0]) * tw : tw;
-    const sy = f.texV ? f.texV[0] * th : 0;
-    const sh = f.texV ? (f.texV[1] - f.texV[0]) * th : th;
-    ctx.save();
-    path();
-    ctx.clip();
-    ctx.setTransform((p1.x - p0.x) / sw, (p1.y - p0.y) / sw,
-                     (p3.x - p0.x) / sh, (p3.y - p0.y) / sh, p0.x, p0.y);
-    ctx.imageSmoothingEnabled = false;
-    ctx.globalAlpha = f.alpha;
-    ctx.drawImage(f.tex, sx, sy, sw, sh, 0, 0, sw, sh);
-    ctx.restore();
-    if (bright < 0.999) {
-      path();
-      ctx.fillStyle = `rgba(5, 8, 20, ${(1 - bright) * 0.6})`;
-      ctx.fill();
-    }
-  } else {
-    path();
-    ctx.globalAlpha = f.alpha;
-    ctx.fillStyle = shade(f.color, bright);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    // outline whole faces only - not BSP seams, not unstroked (hitbox) bars
-    if (f.stroke !== false && (!poly || poly === f.pts)) {
-      ctx.strokeStyle = "rgba(0,0,0,0.35)";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }
-  }
-}
-
 /**
  * Quads for the stage's Interaction hitbox: 12 thin glowing bars along the
  * box edges (width x height, base at the farmland surface + offset, centered
- * on the block - FarmingManager's anchor). Real geometry, so the BSP
- * depth-sorts it against the crop like the in-game CropHighlighter bars.
+ * on the block - FarmingManager's anchor). Real geometry, so WebGL depth-tests
+ * it against the crop like the in-game CropHighlighter bars.
  */
 function hitboxQuads(stage) {
   const hb = stage.hitbox || defHitbox();
@@ -1089,19 +985,7 @@ function barQuads(a, b) {
   }));
 }
 
-function roundRect(x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
-}
-
 function drawGrid() {
-  ctx.strokeStyle = "rgba(120,150,180,0.15)";
-  ctx.lineWidth = 1;
   const ext = state.view.mode === "stages" && state.view.field ? 3.5 : 2.5, top = -0.9375;
   for (let i = -ext; i <= ext; i += 0.5) {
     line([i, top, -ext], [i, top, ext]);
@@ -1109,10 +993,7 @@ function drawGrid() {
   }
   function line(a, b) {
     const pa = project(a), pb = project(b);
-    ctx.beginPath();
-    ctx.moveTo(pa.x, pa.y);
-    ctx.lineTo(pb.x, pb.y);
-    ctx.stroke();
+    previewGL.line(pa.x, pa.y, pb.x, pb.y, "rgba(120,150,180,0.15)", 1);
   }
 }
 
@@ -1171,9 +1052,10 @@ function paintChips() {
   const farmland = farmlandVisual();
   chip($("farmland-chip"), MCAssets.block(farmland, "top"), colorFor(farmland));
   chip($("seed-chip"), MCAssets.item(state.crop.seedModel), colorFor(state.crop.seedModel));
-  const seedConsumable = state.consumables[(state.crop.seedConsumable || "").trim()];
-  chip($("seed-consumable-chip"), MCAssets.item(seedConsumable?.model || ""),
-    colorFor(seedConsumable?.model || state.crop.seedConsumable));
+  const seedConsumable = knownConsumable(state.crop.seedConsumable);
+  const seedConsumableModel = seedConsumable?.outputItem || seedConsumable?.model || "";
+  chip($("seed-consumable-chip"), MCAssets.item(seedConsumableModel),
+    colorFor(seedConsumableModel || state.crop.seedConsumable));
   const harvestedSeedModel = seedPreviewModel() || "minecraft:wheat_seeds";
   chip($("harvest-seed-chip"), MCAssets.item(harvestedSeedModel), colorFor(harvestedSeedModel));
   chip($("light-source-chip"), MCAssets.item("minecraft:lantern"), colorFor("minecraft:lantern"));
@@ -1186,17 +1068,17 @@ function paintChips() {
 
 function syncReferenceWarnings() {
   const farmland = (state.crop.farmland || "").trim();
-  const farmlandMissing = farmland && farmland !== "minecraft" && !state.farmlandTypes[farmland];
+  const farmlandMissing = farmland && farmland !== "minecraft" && !knownFarmland(farmland);
   const farmlandWarning = $("farmland-warning");
   farmlandWarning.hidden = !farmlandMissing;
   farmlandWarning.textContent = farmlandMissing
-    ? `No uploaded farmland has id “${farmland}”. Upload its farmland .yml to preview it.` : "";
+    ? `No farmland draft or upload has id “${farmland}”.` : "";
 
   const seedId = (state.crop.seedConsumable || "").trim();
   const seedWarning = $("seed-consumable-warning");
-  seedWarning.hidden = !seedId || !!state.consumables[seedId];
+  seedWarning.hidden = !seedId || !!knownConsumable(seedId);
   seedWarning.textContent = seedWarning.hidden ? ""
-    : `No uploaded consumable has id “${seedId}”. Upload its consumables .yml to preview it.`;
+    : `No consumable draft or upload has id “${seedId}”.`;
 }
 
 function chip(canvasEl, tex, fallback) {
@@ -1216,6 +1098,16 @@ function chip(canvasEl, tex, fallback) {
 function formatMinutes(value) {
   const rounded = Math.round(Math.max(0, value) * 10) / 10;
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+/**
+ * Restates total growth time in words beside the field, using the same
+ * duration wording as the config editor and the consumable designer.
+ */
+function syncGrowthDuration() {
+  const out = $("crop-minutes-readable");
+  if (!out || !state.crop) return;
+  out.textContent = Lifetimes.format(state.crop.minutes);
 }
 
 function syncProgressReadout() {
@@ -1332,7 +1224,10 @@ function syncBiomePlaybackChoices() {
   if ($("preview-speed")) $("preview-speed").value = String(state.view.speed || 30);
 }
 
-function consumableModel(id) { return state.consumables[(id || "").trim()]?.model || ""; }
+function consumableModel(id) {
+  const item = knownConsumable(id);
+  return item?.outputItem || item?.model || "";
+}
 function seedPreviewModel() {
   return (state.crop.seedConsumable || "").trim()
     ? consumableModel(state.crop.seedConsumable) : state.crop.seedModel;
@@ -1425,14 +1320,14 @@ function rollHarvestDrops() {
     const max = Math.max(0, Math.floor(num(result.max, 1)));
     const quantity = max > min ? min + Math.floor(Math.random() * (max - min + 1)) : min;
     if (quantity <= 0) continue;
-    const known = result.seed ? null : state.consumables[(result.item || "").trim()];
+    const known = result.seed ? null : knownConsumable(result.item);
     // The runtime warns and skips an unknown consumable result.
     if (!result.seed && !known) continue;
-    const seedConsumable = state.consumables[(state.crop.seedConsumable || "").trim()];
+    const seedConsumable = knownConsumable(state.crop.seedConsumable);
     const name = result.seed
       ? plainLegacy(seedConsumable?.name || state.crop.seedName || "Crop seed")
       : plainLegacy(known.name || result.item);
-    const model = result.seed ? seedPreviewModel() : known.model;
+    const model = result.seed ? seedPreviewModel() : consumableModel(result.item);
     const existing = rolled.find(drop => drop.name === name && drop.model === model);
     if (existing) existing.quantity += quantity;
     else rolled.push({ name, model, quantity });
@@ -1744,6 +1639,7 @@ function bindCropForm() {
   syncSeedNamePreview();
   buildBiomePicker(); setVal("crop-outsiderate", c.outsideRate);
   setVal("crop-minutes", c.minutes); setVal("crop-light", c.minLight); setVal("crop-water", c.minWater);
+  syncGrowthDuration();
   $("crop-replant").checked = c.replant;
   setVal("crop-harveststage", c.harvestStage || 0);
   $("crop-netheronly").checked = !!c.netherOnly;
@@ -1945,14 +1841,14 @@ function buildHarvestList() {
       </div>
       <p class="hint warn" data-result-warning hidden></p>`;
     const syncResult = () => {
-      const known = state.consumables[(h.item || "").trim()];
-      const model = known?.model;
+      const known = knownConsumable(h.item);
+      const model = consumableModel(h.item);
       chip(card.querySelector("[data-result-chip]"), MCAssets.item(model || ""), colorFor(model || h.item));
       const warning = card.querySelector("[data-result-warning]");
       const missing = !!(h.item || "").trim() && !known;
       warning.hidden = !missing;
       warning.textContent = missing
-        ? `No uploaded consumable has id “${h.item.trim()}”. Upload its consumables .yml to preview the result.` : "";
+        ? `No consumable draft or upload has id “${h.item.trim()}”.` : "";
     };
     card.addEventListener("input", (e) => {
       resetHarvestPreview();
@@ -2101,7 +1997,12 @@ function elementCard(stage, element, si, ei) {
       return;
     }
     if (!f) return;
-    if (f === "type") { element.type = e.target.value; changed(true); setStage(si, true); return; }
+    if (f === "type") {
+      const previousType = element.type;
+      element.type = e.target.value;
+      applyTypeDefaults(element, previousType);
+      changed(true); setStage(si, true); return;
+    }
     element[f] = e.target.value;
     paintSwatch();
     setStage(si, true);
@@ -2345,7 +2246,7 @@ function bindStaticEvents() {
   $("seed-isconsumable").addEventListener("input", e => {
     resetSeedPreview();
     state.crop.seedConsumable = e.target.checked
-      ? (Object.keys(state.consumables)[0] || state.crop.id || "my_consumable") : "";
+      ? (DraftCatalog.consumableKeys()[0] || state.crop.id || "my_consumable") : "";
     $("seed-consumable").value = state.crop.seedConsumable;
     syncCropDependencies(); paintChips(); changed(false);
   });
@@ -2363,7 +2264,11 @@ function bindStaticEvents() {
   });
   /* biomes handled by buildBiomePicker() */
   bindField("crop-outsiderate", t => state.crop.outsideRate = clamp(num(t.value, 0.5), 0, 1));
-  bindField("crop-minutes", t => { state.crop.minutes = num(t.value, 20); syncProgressReadout(); });
+  bindField("crop-minutes", t => {
+    state.crop.minutes = num(t.value, 20);
+    syncProgressReadout();
+    syncGrowthDuration();
+  });
   bindField("crop-light", t => state.crop.minLight = clamp(num(t.value, 9), 0, 15));
   bindField("crop-water", t => state.crop.minWater = clamp(num(t.value, 0.3), 0, 1));
   $("crop-replant").addEventListener("input", e => {
@@ -2556,13 +2461,13 @@ function bindStaticEvents() {
     state.view.yaw += (e.clientX - lastX) * 0.008;
     state.view.pitch = clamp(state.view.pitch + (e.clientY - lastY) * 0.008, -0.2, 1.4);
     lastX = e.clientX; lastY = e.clientY;
-    draw();
+    scheduleDraw();
   });
-  canvas.addEventListener("pointerup", () => { dragging = false; save(); });
+  canvas.addEventListener("pointerup", () => { dragging = false; flushScheduledDraw(); save(); });
   canvas.addEventListener("wheel", (e) => {
     e.preventDefault();
     state.view.zoom = clamp(state.view.zoom * (e.deltaY > 0 ? 0.9 : 1.1), 60, 700);
-    draw(); save();
+    scheduleDraw(); save();
   }, { passive: false });
 
 }
