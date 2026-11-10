@@ -168,7 +168,7 @@ visuals:
 # name (BLACK, WHITE, RED, GREEN, BLUE, YELLOW, AQUA, ORANGE, PURPLE) or #RRGGBB.
 crop_highlight:
   block: BLACK_STAINED_GLASS
-  thickness: 0.001
+  thickness: 0.005
   glow: false
   glow_color: BLACK
 

@@ -604,13 +604,6 @@ body[data-hydration="lava"] #water-slider { accent-color: var(--lava); }
 .quality-band-segment.tier-good { background: var(--tier-good); }
 .quality-band-segment.tier-perfect { background: var(--tier-perfect); }
 .quality-band-segment .short { display: none; }
-.quality-band-ranges { display: flex; flex-wrap: wrap; gap: 5px 12px; margin-top: 7px; color: var(--muted); font: 10.5px var(--mono); }
-.quality-band-ranges span::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 5px; background: var(--tier-marker); }
-.quality-band-ranges .tier-ruined { --tier-marker: var(--tier-ruined); }
-.quality-band-ranges .tier-poor { --tier-marker: var(--tier-poor); }
-.quality-band-ranges .tier-decent { --tier-marker: var(--tier-decent); }
-.quality-band-ranges .tier-good { --tier-marker: var(--tier-good); }
-.quality-band-ranges .tier-perfect { --tier-marker: var(--tier-perfect); }
 .quality-tier-list { display: flex; flex-direction: column; gap: 6px; }
 .quality-tier-row {
   --tier-marker: var(--line); display: grid;

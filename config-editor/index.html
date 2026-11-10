@@ -32,7 +32,6 @@
   <section class="outline">
     <nav class="tree">
       <button class="row-nav on" data-pane-target="general">General</button>
-      <button class="row-nav" data-pane-target="visuals">Visuals</button>
       <button class="row-nav" data-pane-target="highlight" data-pane-title="Crop highlight (look-at outline)">Crop highlight</button>
       <button class="row-nav" data-pane-target="quality" data-pane-title="Quality tiers">Quality tiers</button>
       <button class="row-nav" data-pane-target="stations" data-pane-title="Stations & tools">Stations & tools</button>
@@ -55,17 +54,8 @@
     <div class="pbody">
 
       <section class="pane" data-pane="general">
-        <p class="hint">Edits the plugin's main <code>config.yml</code>. Sections this editor
-        doesn't show (routing, quality consumption) are preserved untouched
-        when you upload an existing file. Drop the result into
-        <code>plugins/C4/config.yml</code>.</p>
         <div class="form-grid">
           <label class="check"><input id="cfg-debug" type="checkbox"> Debug logging</label>
-        </div>
-      </section>
-
-      <section class="pane" data-pane="visuals" hidden>
-        <div class="form-grid">
           <label class="check"><input id="cfg-glint" type="checkbox"> Enchant glint on crafted items</label>
           <label class="check"><input id="cfg-particles" type="checkbox"> Particle effects</label>
         </div>
@@ -95,13 +85,12 @@
       </section>
 
       <section class="pane" data-pane="quality" hidden>
-        <p class="hint">Crafting produces a final preparation score from 0 to 100%. The score lands
-        in one band below. Scores below Poor ruin the batch; every other tier changes how long
+        <p class="hint">Crafting an item gives a preparation score from 0 to 100%. The score is then fit to a tier, changing how long
         the crafted item's configured effects last.</p>
         <h3 class="sub">Score bands</h3>
         <div id="quality-score-map"></div>
         <p id="quality-threshold-warning" class="warning-box" hidden>Tier start scores must rise
-        from Poor through Perfect. The server uses its default bands until this is corrected.</p>
+        from Poor through Perfect.</p>
         <h3 class="sub">Tier settings</h3>
         <div id="quality-tier-settings"></div>
         <h3 class="sub">Ruined batch item</h3>
@@ -148,8 +137,7 @@
       </section>
 
       <section class="pane" data-pane="crops" hidden>
-        <p class="hint">Vanilla crops grow at full speed in their natural biomes and at the
-        outside-rate elsewhere. Biomes may be keys or biome-group names.</p>
+        <p class="hint">Vanilla crops grow at full speed in their natural biomes and this default rate otherwise.</p>
         <div class="form-grid">
           <label>Default outside rate <input id="vc-default" type="number" min="0" max="1" step="0.05" data-range></label>
         </div>
@@ -158,13 +146,13 @@
       </section>
 
       <section class="pane" data-pane="biomegroups" hidden>
-        <p class="hint">Named, composable lists of biome keys (a member may be another group).</p>
+        <p class="hint">Biome groups are made up of biome keys and optionally other biome groups.</p>
         <div id="biome-groups"></div>
         <button id="btn-add-bg" class="add">+ biome group</button>
       </section>
 
       <section class="pane" data-pane="consumablegroups" hidden>
-        <p class="hint">Named groups of materials / consumable ids / other groups, usable as recipe tags.</p>
+        <p class="hint">Consumable groups are named groups of materials / consumable ids / other groups, usable as recipe tags.</p>
         <div id="consumable-groups"></div>
         <button id="btn-add-cg" class="add">+ consumable group</button>
       </section>
@@ -199,6 +187,7 @@
   <button data-screen="view">config.yml</button>
 </nav>
 
+<script src="../shared/legacy-text.js?v=1"></script>
 <script src="../shared/ui.js?v=20"></script>
 <script src="../shared/mc-assets.js?v=12"></script>
 <script src="../shared/yaml-lite.js?v=3"></script>

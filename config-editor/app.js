@@ -116,6 +116,7 @@ function bindForms() {
   const ins = sect("insanity");
   const vis = sect("visuals");
   const ch = sect("crop_highlight");
+  ch.thickness = num(ch.thickness, 0.005);
   const vf = sect("vanilla_foods");
   const vc = sect("vanilla_crops");
 
@@ -196,17 +197,12 @@ function refreshQualityMap(thresholds, multipliers) {
     return `<div class="quality-band-segment tier-${keys[i]}" style="flex-basis:${width}%" title="${name}: ${range}; ${outcome}">
       <span class="long">${name}</span><span class="short">${name[0]}</span></div>`;
   }).join("");
-  const ranges = names.map((name, i) => {
-    const end = i === names.length - 1 ? 1 : starts[i + 1];
-    return `<span class="tier-${keys[i]}">${name} · ${qualityRangeText(starts[i], end, i === names.length - 1)}</span>`;
-  }).join("");
   const ariaRanges = names.map((name, i) => {
     const end = i === names.length - 1 ? 1 : starts[i + 1];
     return `${name} ${qualityRangeText(starts[i], end, i === names.length - 1)}`;
   }).join(", ");
   root.innerHTML = `<div class="quality-score-scale"><span>0%</span><span>Preparation score</span><span>100%</span></div>
-    <div class="quality-band" role="img" aria-label="Preparation score bands: ${ariaRanges}">${segments}</div>
-    <div class="quality-band-ranges">${ranges}</div>`;
+    <div class="quality-band" role="img" aria-label="Preparation score bands: ${ariaRanges}">${segments}</div>`;
 
   QUALITY_TIERS.forEach((tier, i) => {
     const next = i === QUALITY_TIERS.length - 1 ? 1 : thresholds[QUALITY_TIERS[i + 1]];
@@ -741,7 +737,7 @@ function drawHighlightPreview() {
 
   const ch = sect("crop_highlight");
   const material = String(ch.block || "BLACK_STAINED_GLASS").trim() || "BLACK_STAINED_GLASS";
-  const thickness = clamp(num(ch.thickness, 0.04), MIN_THICKNESS, MAX_THICKNESS);
+  const thickness = clamp(num(ch.thickness, 0.005), MIN_THICKNESS, MAX_THICKNESS);
   const glow = ch.glow === true;
   const glowColor = configuredGlowColor(ch.glow_color);
   drawHighlightGrid(canvas, ctx);
